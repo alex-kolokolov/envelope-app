@@ -1,95 +1,173 @@
-import * as React from 'react';
-import { View } from 'react-native';
-import Animated, { FadeInUp, FadeOutDown, LayoutAnimationConfig } from 'react-native-reanimated';
-import { Info } from '~/lib/icons/Info';
-import { Avatar, AvatarFallback, AvatarImage } from '~/components/ui/avatar';
-import { Button } from '~/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '~/components/ui/card';
-import { Progress } from '~/components/ui/progress';
+import React, { useState, useCallback } from 'react';
+import { View, Alert, ActivityIndicator } from 'react-native';
+import { router } from 'expo-router';
 import { Text } from '~/components/ui/text';
-import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
+import { Button } from '~/components/ui/button';
+import { useNickname } from '~/hooks/useNickname';
+import { useGamesList } from '~/hooks/useGamesList';
+// Import connectToOpenedGame and RoomCache
+import { RoomCache, connectToOpenedGame } from '~/lib/api/client';
+import { Header } from '~/components/screens/index/Header';
+import { GameListItem } from '~/components/screens/index/GameListItem';
+import { NicknameModal } from '~/components/screens/index/NicknameModal';
+// @ts-ignore: no type declarations for flash-list
+import { FlashList } from '@shopify/flash-list';
 
-const GITHUB_AVATAR_URI =
-  'https://i.pinimg.com/originals/ef/a2/8d/efa28d18a04e7fa40ed49eeb0ab660db.jpg';
+export default function AvailableGamesScreen() {
+  const [nickname, setNickname] = useNickname();
+  const [isNicknameModalVisible, setNicknameModalVisible] = useState(false);
+  const { games, isLoading: isLoadingList, error: listError, refreshGames } = useGamesList(); // Renamed isLoading
+  const [tempNickname, setTempNickname] = useState('');
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false); // Loading state for connecting
+  const [isEditingNickname, setIsEditingNickname] = useState(false); // New state for editing mode
 
-export default function Screen() {
-  const [progress, setProgress] = React.useState(78);
+  const handleGamePress = useCallback(async (gameId: string) => {
+    if (nickname) {
+      setIsConnecting(true); // Start loading indicator for connection attempt
+      try {
+        // Attempt to connect to the game via API
+        const connectResult = await connectToOpenedGame(gameId, nickname);
+        setIsConnecting(false); // Stop loading
 
-  function updateProgressValue() {
-    setProgress(Math.floor(Math.random() * 100));
-  }
-  return (
-    <View className='flex-1 justify-center items-center gap-5 p-6 bg-secondary/30'>
-      <Card className='w-full max-w-sm p-6 rounded-2xl'>
-        <CardHeader className='items-center'>
-          <Avatar alt="Rick Sanchez's Avatar" className='w-24 h-24'>
-            <AvatarImage source={{ uri: GITHUB_AVATAR_URI }} />
-            <AvatarFallback>
-              <Text>RS</Text>
-            </AvatarFallback>
-          </Avatar>
-          <View className='p-3' />
-          <CardTitle className='pb-2 text-center'>Rick Sanchez</CardTitle>
-          <View className='flex-row'>
-            <CardDescription className='text-base font-semibold'>Scientist</CardDescription>
-            <Tooltip delayDuration={150}>
-              <TooltipTrigger className='px-2 pb-0.5 active:opacity-50'>
-                <Info size={14} strokeWidth={2.5} className='w-4 h-4 text-foreground/70' />
-              </TooltipTrigger>
-              <TooltipContent className='py-2 px-4 shadow'>
-                <Text className='native:text-lg'>Freelance</Text>
-              </TooltipContent>
-            </Tooltip>
-          </View>
-        </CardHeader>
-        <CardContent>
-          <View className='flex-row justify-around gap-3'>
-            <View className='items-center'>
-              <Text className='text-sm text-muted-foreground'>Dimension</Text>
-              <Text className='text-xl font-semibold'>C-137</Text>
-            </View>
-            <View className='items-center'>
-              <Text className='text-sm text-muted-foreground'>Age</Text>
-              <Text className='text-xl font-semibold'>70</Text>
-            </View>
-            <View className='items-center'>
-              <Text className='text-sm text-muted-foreground'>Species</Text>
-              <Text className='text-xl font-semibold'>Human</Text>
-            </View>
-          </View>
-        </CardContent>
-        <CardFooter className='flex-col gap-3 pb-0'>
-          <View className='flex-row items-center overflow-hidden'>
-            <Text className='text-sm text-muted-foreground'>Productivity:</Text>
-            <LayoutAnimationConfig skipEntering>
-              <Animated.View
-                key={progress}
-                entering={FadeInUp}
-                exiting={FadeOutDown}
-                className='w-11 items-center'
-              >
-                <Text className='text-sm font-bold text-sky-600'>{progress}%</Text>
-              </Animated.View>
-            </LayoutAnimationConfig>
-          </View>
-          <Progress value={progress} className='h-2' indicatorClassName='bg-sky-600' />
-          <View />
-          <Button
-            variant='outline'
-            className='shadow shadow-foreground/5'
-            onPress={updateProgressValue}
-          >
-            <Text>Update</Text>
+        // Navigate to lobby on successful connection
+        router.push({
+          pathname: '/lobby/[gameId]',
+          params: {
+            gameId: connectResult.roomId,
+            userId: connectResult.userId, // Pass userId from connection result
+            isAdmin: connectResult.admin.toString() // Pass admin status (likely false)
+          },
+        });
+
+      } catch (error) {
+        setIsConnecting(false); // Stop loading on error
+        console.error('Failed to connect to game:', error);
+        Alert.alert('Ошибка подключения', `Не удалось подключиться к игре. ${error instanceof Error ? error.message : 'Пожалуйста, попробуйте снова.'}`);
+      }
+    } else {
+      // Prompt for nickname if not set
+      setSelectedGameId(gameId);
+      setTempNickname('');
+      setIsEditingNickname(false);
+      setNicknameModalVisible(true);
+    }
+  }, [nickname]); // Added connectToOpenedGame dependency
+
+  // Handle edit nickname button press
+  const handleEditNicknamePress = useCallback(() => {
+    setTempNickname(nickname || '');
+    setIsEditingNickname(true);
+    setNicknameModalVisible(true);
+  }, [nickname]);
+
+  const handleSaveNickname = useCallback(async () => {
+    if (tempNickname.trim().length <= 16) {
+      await setNickname(tempNickname.trim());
+      setNicknameModalVisible(false);
+      
+      // Only attempt to connect to game if we're not in editing mode
+      if (selectedGameId && !isEditingNickname) {
+        // After saving nickname, attempt to connect to the selected game
+        await handleGamePress(selectedGameId); // Re-call handleGamePress with the now-set nickname
+        setSelectedGameId(null); // Reset selected game
+      }
+      
+      // Reset editing mode
+      setIsEditingNickname(false);
+    } else {
+      Alert.alert('Недопустимое имя', 'Имя должно быть не более 16 символов.');
+    }
+  }, [tempNickname, setNickname, selectedGameId, handleGamePress, isEditingNickname]); // Added isEditingNickname dependency
+
+  const handleCloseModal = useCallback(() => {
+    setNicknameModalVisible(false);
+    setSelectedGameId(null);
+    setIsEditingNickname(false);
+  }, []);
+
+  const handleCreateGamePress = useCallback(() => {
+     if (!nickname) {
+       Alert.alert("Требуется имя", "Пожалуйста, установите имя перед созданием игры.", [
+         { text: "OK", onPress: () => {
+             setTempNickname('');
+             setIsEditingNickname(false);
+             setNicknameModalVisible(true);
+           }
+         }
+       ]);
+     } else {
+       router.push('/create-game');
+     }
+  }, [nickname]);
+
+  const renderGameItem = useCallback(({ item }: { item: RoomCache }) => {
+    const gameListItemData = {
+      id: item.id,
+      name: `Комната ${item.id.substring(0, 6)}...`,
+      playerCount: item.players?.length ?? 0,
+      maxPlayers: item.capacity,
+    };
+    // Disable button while connecting
+    return <GameListItem item={gameListItemData} onPress={handleGamePress} disabled={isConnecting} />;
+  }, [handleGamePress, isConnecting]); // Added isConnecting dependency
+
+  const ListContent = () => {
+    // Show list loading indicator OR connection indicator
+    if (isLoadingList || isConnecting) {
+      return <ActivityIndicator size="large" color="#0000ff" className="mt-10" />;
+    }
+    if (listError) {
+      return (
+        <View className='items-center mt-10'>
+          <Text className='text-destructive mb-4'>Ошибка загрузки игр: {listError.message}</Text>
+          <Button onPress={refreshGames} variant='outline'>
+            <Text>Повторить</Text>
           </Button>
-        </CardFooter>
-      </Card>
+        </View>
+      );
+    }
+    return (
+      <FlashList
+        data={games}
+        renderItem={renderGameItem}
+        keyExtractor={(item) => item.id}
+        estimatedItemSize={80}
+        contentContainerClassName='pb-4'
+        ListEmptyComponent={<Text className='text-center text-muted-foreground mt-10'>Не найдено доступных игр.</Text>}
+        refreshing={isLoadingList}
+        onRefresh={refreshGames}
+      />
+    );
+  };
+
+
+  return (
+    <View className='flex-1 p-4 bg-background'>
+      <Header 
+        nickname={nickname} 
+        onEditPress={nickname ? handleEditNicknamePress : undefined} 
+      />
+
+      <View className='my-4'>
+        {/* Disable create button while connecting to another game */}
+        <Button onPress={handleCreateGamePress} size='lg' disabled={isConnecting}>
+          <Text>Создать новую игру</Text>
+        </Button>
+      </View>
+
+      <Text className='text-xl font-semibold mb-2 text-foreground'>Доступные игры</Text>
+
+      <ListContent />
+
+      <NicknameModal
+        isVisible={isNicknameModalVisible}
+        onClose={handleCloseModal}
+        onSave={handleSaveNickname}
+        tempNickname={tempNickname}
+        setTempNickname={setTempNickname}
+        isEditing={isEditingNickname}
+      />
     </View>
   );
 }

@@ -51,14 +51,23 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
       <StatusBar style={isDarkColorScheme ? 'light' : 'dark'} />
-      <Stack>
+      <Stack screenOptions={{ headerBackVisible: false }}>
         <Stack.Screen
           name='index'
           options={{
-            title: 'Starter Base',
+            title: 'Available Games',
             headerRight: () => <ThemeToggle />,
           }}
         />
+        <Stack.Screen
+          name='create-game'
+          options={{
+            title: 'Create Game',
+            headerBackVisible: true,
+          }}
+        />
+        <Stack.Screen name='lobby/[gameId]' options={{ headerBackVisible: true }} />
+        {/* Add other screens here if needed, they will inherit headerBackVisible: false */}
       </Stack>
       <PortalHost />
     </ThemeProvider>

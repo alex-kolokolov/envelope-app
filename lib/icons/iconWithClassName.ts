@@ -11,4 +11,6 @@ export function iconWithClassName(icon: LucideIcon) {
       },
     },
   });
+  
+  return icon; // Return the icon after applying cssInterop
 }
