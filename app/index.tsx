@@ -143,12 +143,8 @@ export default function AvailableGamesScreen() {
 
 
   return (
-    <View className='flex-1 p-4 bg-background'>
-      <Header 
-        nickname={nickname} 
-        onEditPress={nickname ? handleEditNicknamePress : undefined} 
-      />
-
+    <View className='flex-1 bg-background'>
+      <Header nickname={nickname} onEditPress={handleEditNicknamePress} />
       <View className='my-4'>
         {/* Disable create button while connecting to another game */}
         <Button onPress={handleCreateGamePress} size='lg' disabled={isConnecting}>

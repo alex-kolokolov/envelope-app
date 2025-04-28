@@ -55,7 +55,7 @@ export default function RootLayout() {
         <Stack.Screen
           name='index'
           options={{
-            title: 'Available Games',
+            title: 'Доступные игры',
             headerRight: () => <ThemeToggle />,
           }}
         />
