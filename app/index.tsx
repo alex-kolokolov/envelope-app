@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { View, Alert, ActivityIndicator } from 'react-native';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
+import { View, Alert, ActivityIndicator, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Text } from '~/components/ui/text';
 import { Button } from '~/components/ui/button';
@@ -101,16 +101,20 @@ export default function AvailableGamesScreen() {
      }
   }, [nickname]);
 
+  // Memoize item data preparation to prevent unnecessary object creation on render
+  const getItemData = useCallback((item: RoomCache) => ({
+    id: item.id,
+    name: `Комната ${item.id.substring(0, 6)}...`,
+    playerCount: item.players?.length ?? 0,
+    maxPlayers: item.capacity,
+  }), []);
+
+  // Optimize renderItem with useCallback to prevent recreation on each render
   const renderGameItem = useCallback(({ item }: { item: RoomCache }) => {
-    const gameListItemData = {
-      id: item.id,
-      name: `Комната ${item.id.substring(0, 6)}...`,
-      playerCount: item.players?.length ?? 0,
-      maxPlayers: item.capacity,
-    };
+    const gameListItemData = getItemData(item);
     // Disable button while connecting
     return <GameListItem item={gameListItemData} onPress={handleGamePress} disabled={isConnecting} />;
-  }, [handleGamePress, isConnecting]); // Added isConnecting dependency
+  }, [handleGamePress, isConnecting, getItemData]); // Added isConnecting dependency
 
   const ListContent = () => {
     // Show list loading indicator OR connection indicator
@@ -137,6 +141,12 @@ export default function AvailableGamesScreen() {
         ListEmptyComponent={<Text className='text-center text-muted-foreground mt-10'>Не найдено доступных игр.</Text>}
         refreshing={isLoadingList}
         onRefresh={refreshGames}
+        // Optimize for iOS to prevent rerendering artifacts
+        removeClippedSubviews={Platform.OS === 'ios'}
+        // Maintain scroll position when data changes
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0
+        }}
       />
     );
   };

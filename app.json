@@ -1,5 +1,6 @@
 {
   "expo": {
+    "sdkVersion": "53.0.0",
     "name": "envelope",
     "slug": "envelope",
     "version": "1.0.0",
@@ -33,7 +34,8 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "usesCleartextTraffic": true
     },
     "plugins": [
       "expo-router"

@@ -4,16 +4,20 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fb349854-ff30-4510-8235-fef4cc7619af" name="Changes" comment="фыв">
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/_layout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/_layout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/index.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/index.tsx" afterDir="false" />
+    <list default="true" id="fb349854-ff30-4510-8235-fef4cc7619af" name="Changes" comment="final super">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/app.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/game/results.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/game/results.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/api/client.ts" beforeDir="false" afterPath="$PROJECT_DIR$/lib/api/client.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="ChangesViewManager" show_ignored="true" />
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -71,6 +75,7 @@
       <workItem from="1745743237048" duration="2028000" />
       <workItem from="1745866038434" duration="4835000" />
       <workItem from="1745875997087" duration="16000" />
+      <workItem from="1745876037027" duration="2651000" />
     </task>
     <task id="LOCAL-00001" summary="фыв">
       <option name="closed" value="true" />
@@ -80,14 +85,42 @@
       <option name="project" value="LOCAL" />
       <updated>1745867853433</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="final super">
+      <option name="closed" value="true" />
+      <created>1745876118602</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1745876118602</updated>
+    </task>
+    <task id="LOCAL-00003" summary="final super">
+      <option name="closed" value="true" />
+      <created>1745876224787</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1745876224787</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="фыв" />
-    <option name="LAST_COMMIT_MESSAGE" value="фыв" />
+    <MESSAGE value="final super" />
+    <option name="LAST_COMMIT_MESSAGE" value="final super" />
   </component>
 </project>

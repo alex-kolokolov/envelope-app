@@ -127,6 +127,11 @@ export function useWebSocketGame(roomId: string | null, userId: string | null): 
                   console.log('Parsed Game Status: WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT, Theme:', theme);
                   statusUpdated = true;
               }
+          } else if (messageText === '[SYSTEM]: Ответ сохранён') {
+              // Map 'Ответ сохранён' system message to GPT processing phase
+              setGameStatus('WAITING_FOR_GPT');
+              console.log('Parsed Game Status: WAITING_FOR_GPT (from Ответ сохранён)');
+              statusUpdated = true;
           } else if (resultRegex.test(messageText)) {
               setGameStatus('RESULTS_READY');
               console.log('Parsed Game Status: RESULTS_READY');

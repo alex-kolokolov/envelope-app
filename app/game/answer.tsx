@@ -5,6 +5,7 @@ import { Text } from '~/components/ui/text';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { useWebSocketGame, GameStatus } from '~/hooks/useWebSocketGame'; // Import hook and GameStatus
+import { Video, ResizeMode } from 'expo-av';
 
 const ANSWER_INPUT_DURATION_S = 60; // 60 seconds for player to input answer
 
@@ -22,6 +23,14 @@ export default function AnswerScreen() {
   const [timeLeft, setTimeLeft] = useState(ANSWER_INPUT_DURATION_S);
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const adVideos = [
+    require('../../assets/videos/Запись 2025-04-29 020627.mp4'),
+    require('../../assets/videos/Запись экрана 2025-04-29 020404.mp4'),
+    require('../../assets/videos/Запись экрана 2025-04-29 020605.mp4'),
+  ];
+  const [adVideoIdx, setAdVideoIdx] = useState<number | null>(null);
+  const [showAd, setShowAd] = useState(false);
 
   // WebSocket connection - Use gameStatus
   const {
@@ -71,6 +80,18 @@ export default function AnswerScreen() {
     };
   }, [gameStatus, hasSubmitted, isWsConnected, sendMessage]); // Added dependencies
 
+  useEffect(() => {
+    if (hasSubmitted && (gameStatus === 'WAITING_FOR_GPT' || gameStatus === 'WAITING_FOR_ALL_ANSWERS_FROM_GPT')) {
+      if (adVideoIdx === null) {
+        const idx = Math.floor(Math.random() * adVideos.length);
+        setAdVideoIdx(idx);
+      }
+      setShowAd(true);
+    } else {
+      setShowAd(false);
+    }
+  }, [hasSubmitted, gameStatus]);
+
   // --- Actions ---
   const handleSubmit = useCallback(async () => {
     // Allow submission only if not already submitted, time > 0, and connected
@@ -105,17 +126,15 @@ export default function AnswerScreen() {
     console.log("AnswerScreen Status Changed:", gameStatus);
     // Navigate when results are ready or game is done/closed
     if (
-        gameStatus === 'WAITING_FOR_GPT' || // Status indicating server is processing
-        gameStatus === 'WAITING_FOR_ALL_ANSWERS_FROM_GPT' || // Status indicating server is processing
-        gameStatus === 'RESULTS_READY' ||
-        gameStatus === 'STATS_READY' ||
-        gameStatus === 'GAME_DONE'
+      gameStatus === 'RESULTS_READY' ||
+      gameStatus === 'STATS_READY' ||
+      gameStatus === 'GAME_DONE'
     ) {
-        console.log(`Navigating to results screen due to status: ${gameStatus}`);
-        router.replace({ // Use replace
-            pathname: '/game/results',
-            params: { gameId, userId, isAdmin: isAdmin.toString() },
-        });
+      console.log(`Navigating to results screen due to status: ${gameStatus}`);
+      router.replace({ // Use replace
+        pathname: '/game/results',
+        params: { gameId, userId, isAdmin: isAdmin.toString() },
+      });
     }
     // Handle other status changes like game closing unexpectedly or regressing
     else if (gameStatus === 'CLOSED') {
@@ -189,6 +208,15 @@ export default function AnswerScreen() {
           {/* Submit Button / Status */}
           {hasSubmitted ? (
              <View className='items-center p-4 border border-dashed border-primary rounded-lg bg-muted'>
+                {showAd && adVideoIdx !== null && (
+                  <Video
+                    source={adVideos[adVideoIdx]}
+                    style={{ width: '100%', height: 200 }}
+                    resizeMode={ResizeMode.CONTAIN}
+                    shouldPlay
+                    isLooping
+                  />
+                )}
                 <Text className='text-primary font-semibold'>Ответ отправлен!</Text>
                 <Text className='text-muted-foreground text-center mt-1'>Ожидаем других игроков или результатов...</Text>
                 <Text className='text-muted-foreground text-xs mt-2'>Статус: {displayStatus}</Text>
