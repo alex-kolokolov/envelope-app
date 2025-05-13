@@ -57,9 +57,13 @@ export function useWebSocketGame(roomId: string | null, userId: string | null): 
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
   const isManualClose = useRef<boolean>(false); // Flag for manual closure
 
+  // Static ws reference to persist across renders
+  const persistentWs = useRef<WebSocket | null>(null);
+
   const connect = useCallback(() => {
-    if (!roomId || !userId || ws.current?.readyState === WebSocket.OPEN || ws.current?.readyState === WebSocket.CONNECTING) {
-        console.log('WebSocket connect skipped:', { roomId, userId, readyState: ws.current?.readyState });
+    // Check if we already have a valid connection - use persistentWs instead of ws
+    if (!roomId || !userId || persistentWs.current?.readyState === WebSocket.OPEN || persistentWs.current?.readyState === WebSocket.CONNECTING) {
+        console.log('WebSocket connect skipped:', { roomId, userId, readyState: persistentWs.current?.readyState });
         return; // Don't connect if no IDs or already connected/connecting
     }
 
@@ -78,18 +82,19 @@ export function useWebSocketGame(roomId: string | null, userId: string | null): 
 
     const wsUrl = `${WEBSOCKET_URL}?roomId=${roomId}&userId=${userId}`;
     console.log(`Attempting to connect WebSocket: ${wsUrl}`);
-    ws.current = new WebSocket(wsUrl);
-    setReadyState(ws.current.readyState);
+    persistentWs.current = new WebSocket(wsUrl);
+    ws.current = persistentWs.current; // Update regular ref for backward compatibility
+    setReadyState(persistentWs.current.readyState);
 
-    ws.current.onopen = () => {
+    persistentWs.current.onopen = () => {
       console.log('WebSocket Connected');
       setIsConnected(true);
       setError(null);
-      setReadyState(ws.current?.readyState ?? WebSocket.OPEN);
+      setReadyState(persistentWs.current?.readyState ?? WebSocket.OPEN);
       reconnectAttempts.current = 0; // Reset reconnect attempts on successful connection
     };
 
-    ws.current.onmessage = (event) => {
+    persistentWs.current.onmessage = (event) => {
 // --- START DEBUG LOG ---
       console.log('[DEBUG] Raw WebSocket message received:', event.data);
       // --- END DEBUG LOG ---
@@ -159,22 +164,22 @@ export function useWebSocketGame(roomId: string | null, userId: string | null): 
       }
     };
 
-    ws.current.onerror = (event) => {
+    persistentWs.current.onerror = (event) => {
       console.error('WebSocket Error:', event);
       setError(event instanceof Error ? event : new Error('WebSocket error occurred')); // Store the error event
-      setReadyState(ws.current?.readyState ?? WebSocket.CLOSED);
+      setReadyState(persistentWs.current?.readyState ?? WebSocket.CLOSED);
     };
 
-    ws.current.onclose = (event) => {
+    persistentWs.current.onclose = (event) => {
       console.log(`WebSocket Closed: Code=${event.code}, Reason=${event.reason}, Clean=${event.wasClean}`);
       const manualClose = isManualClose.current; // Capture flag before resetting
       isManualClose.current = false; // Reset flag
 
       setIsConnected(false);
-      setReadyState(ws.current?.readyState ?? WebSocket.CLOSED);
+      setReadyState(persistentWs.current?.readyState ?? WebSocket.CLOSED);
       setGameStatus('CLOSED'); // Set status to CLOSED on disconnect
       setCurrentTheme(null); // Clear theme on disconnect
-      ws.current = null; // Ensure ws ref is nullified
+      // Don't nullify the ref here to allow reconnection
 
       // Attempt to reconnect ONLY if the closure was unexpected and NOT manual
       if (!manualClose && !event.wasClean && reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
@@ -186,6 +191,8 @@ export function useWebSocketGame(roomId: string | null, userId: string | null): 
           setError(new Error('WebSocket connection lost and reconnect limit reached.'));
       } else if (manualClose) {
           console.log('WebSocket closed manually, reconnection prevented.');
+          ws.current = null; // Only nullify ref on manual close
+          persistentWs.current = null; // Only nullify persistent ref on manual close
       }
     };
 
@@ -242,32 +249,29 @@ export function useWebSocketGame(roomId: string | null, userId: string | null): 
         }
     }
 
-    // Cleanup function
+    // Cleanup function - только очищаем таймеры, но НЕ закрываем соединение
     return () => {
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);
       }
-      if (ws.current) {
-        console.log('Closing WebSocket connection on component unmount or dependency change.');
-        isManualClose.current = true; // Prevent reconnect on cleanup close
-        ws.current.close(1000, "Client disconnected"); // Use standard code for normal closure
-        ws.current = null;
-      }
-       setIsConnected(false);
-       setReadyState(WebSocket.CLOSED);
-       setGameStatus('CLOSED');
-       setCurrentTheme(null);
+      
+      // Сохраняем состояние WebSocket при unmount компонента
+      console.log('Component unmounting, but WebSocket connection maintained.');
+      
+      // Не закрываем соединение при unmount, только отмечаем статус в состоянии компонента
+      // Соединение будет закрыто только при вызове closeConnection или изменении roomId/userId
     };
   }, [roomId, userId, connect]); // Re-run effect if roomId, userId, or connect function changes
 
   // Function to send messages
   const sendMessage = useCallback((message: any) => {
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+    // Use persistentWs instead of ws to ensure message goes through even after component remounts
+    if (persistentWs.current && persistentWs.current.readyState === WebSocket.OPEN) {
       try {
         // Expecting message to be a string for this game's protocol based on user description
         const messageString = typeof message === 'string' ? message : JSON.stringify(message);
         console.log('Sending WebSocket Message:', messageString);
-        ws.current.send(messageString);
+        persistentWs.current.send(messageString);
       } catch (e) {
         console.error('Failed to send WebSocket message:', message, e);
          setError(e instanceof Error ? e : new Error('Failed to send message'));
@@ -280,14 +284,13 @@ export function useWebSocketGame(roomId: string | null, userId: string | null): 
 
   // Function to manually close the connection
   const closeConnection = useCallback(() => {
-      if (ws.current) {
+      if (persistentWs.current) {
           console.log('Manually closing WebSocket connection.');
           isManualClose.current = true; // Set flag to prevent reconnection
-          ws.current.close(1000, "User initiated disconnect"); // Normal closure
+          persistentWs.current.close(1000, "User initiated disconnect"); // Normal closure
           // State updates will happen in the onclose handler
-          ws.current = null; // Nullify ref immediately
-          // Explicitly update state here as well for immediate feedback if needed,
-          // though onclose should handle it.
+          // Don't nullify refs here - let onclose handle that for manual closes
+          // Explicitly update state here as well for immediate feedback if needed
           setIsConnected(false);
           setReadyState(WebSocket.CLOSING); // Indicate closing state
           setGameStatus('CLOSED');

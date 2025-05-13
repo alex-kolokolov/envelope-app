@@ -154,7 +154,7 @@ export default function ScenarioScreen() {
           </Text>
           <Text className='text-lg text-center mb-8 text-foreground p-4 border border-border rounded bg-card'>
             {/* Display theme based on admin status */}
-            {themeToUse || 'Детали сценария не доступны.'}
+            {themeToUse || 'Ожидаем, пока ведущий выберет тему'}
           </Text>
           <Text className='text-muted-foreground italic'>
              Статус: {displayStatus}

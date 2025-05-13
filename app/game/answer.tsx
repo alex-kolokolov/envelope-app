@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Video, ResizeMode } from 'expo-av';
 import { View, TextInput, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Text } from '~/components/ui/text';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { useWebSocketGame, GameStatus } from '~/hooks/useWebSocketGame'; // Import hook and GameStatus
-import { Video, ResizeMode } from 'expo-av';
 
 const ANSWER_INPUT_DURATION_S = 60; // 60 seconds for player to input answer
 
@@ -31,6 +31,28 @@ export default function AnswerScreen() {
   ];
   const [adVideoIdx, setAdVideoIdx] = useState<number | null>(null);
   const [showAd, setShowAd] = useState(false);
+  // Обработчик ошибок для предупреждений видео
+  const [videoError, setVideoError] = useState<boolean>(false);
+  
+  // Обработчик ошибок для компонента Video
+  useEffect(() => {
+    // Переопределяем console.warn, чтобы игнорировать предупреждения expo-av
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+      // Игнорируем предупреждения от expo-av
+      if (args[0] && typeof args[0] === 'string' && args[0].includes('expo-av')) {
+        // Просто логируем их без сбоя
+        console.log('Игнорируем предупреждение expo-av:', args[0].substring(0, 100) + '...');
+        return;
+      }
+      originalWarn(...args);
+    };
+    
+    return () => {
+      // Восстанавливаем оригинальную функцию
+      console.warn = originalWarn;
+    };
+  }, []);
 
   // WebSocket connection - Use gameStatus
   const {
@@ -208,13 +230,17 @@ export default function AnswerScreen() {
           {/* Submit Button / Status */}
           {hasSubmitted ? (
              <View className='items-center p-4 border border-dashed border-primary rounded-lg bg-muted'>
-                {showAd && adVideoIdx !== null && (
+                {showAd && adVideoIdx !== null && !videoError && (
                   <Video
                     source={adVideos[adVideoIdx]}
                     style={{ width: '100%', height: 200 }}
                     resizeMode={ResizeMode.CONTAIN}
                     shouldPlay
                     isLooping
+                    onError={(e) => {
+                      console.log('Video error:', e);
+                      setVideoError(true);
+                    }}
                   />
                 )}
                 <Text className='text-primary font-semibold'>Ответ отправлен!</Text>

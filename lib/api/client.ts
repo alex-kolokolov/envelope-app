@@ -46,6 +46,11 @@ export interface PlayerRoundResult {
   gptAnswer: string; // Что предложил GPT
 }
 
+export interface RoomSummary {
+  players: string[]; // Список ников всех игроков
+  admin: string; // Ник администратора комнаты
+}
+
 export interface RoomInfo {
   id: string; // ID комнаты
   status: RoomStatus; // Статус комнаты
@@ -165,11 +170,18 @@ export async function forceStartGame(roomId: string): Promise<void> {
  * @param roomId - ID of the room to close
  */
 export async function closeGame(roomId: string): Promise<void> {
-   const params = new URLSearchParams({ roomId });
-   // Assuming 200 OK with no content based on Swagger
-  await apiFetch<null>(`/games/close?${params.toString()}`, {
-    method: "POST",
-  });
+  const params = new URLSearchParams({ roomId });
+  try {
+    // Make the API call to close the game
+    await apiFetch<null>(`/games/close?${params.toString()}`, {
+      method: "POST",
+    });
+    
+    console.log("Game close request sent successfully");
+  } catch (error) {
+    console.error("Failed to close game:", error);
+    throw error;
+  }
 }
 
 
@@ -188,31 +200,31 @@ export async function getRoomInfo(roomId: string): Promise<RoomInfo> {
  * @param roomId - ID of the room
  */
 export async function getRoomStatus(roomId: string): Promise<RoomStatus> {
-    // The swagger indicates the response is a plain string enum, not JSON
-    const url = `${BASE_URL}/room/${roomId}/status`;
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        let statusText = await response.text();
-        
-        // Clean up the response - remove any quotes if present
-        statusText = statusText.replace(/^"(.*)"$/, '$1');
-        
-        // Validate if the text is a valid RoomStatus enum key
-        if (Object.values(RoomStatus).includes(statusText as RoomStatus)) {
-            return statusText as RoomStatus;
-        } else {
-            console.error(`Invalid room status received: ${statusText}`);
-            throw new Error(`Invalid room status received: ${statusText}`);
-        }
-    } catch (error) {
-        console.error("Fetch error:", error);
-        throw error;
+  // The swagger indicates the response is a plain string enum, not JSON
+  try {
+    const response = await fetch(`${BASE_URL}/room/${roomId}/status`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+    let statusText = await response.text();
+    
+    // Handle possible quotation marks around the status text
+    statusText = statusText.replace(/^"(.*)"$/, '$1');
+    
+    // Validate if the text is a valid RoomStatus enum key
+    if (Object.values(RoomStatus).includes(statusText as RoomStatus)) {
+      return statusText as RoomStatus;
+    } else {
+      console.error(`Invalid room status received: ${statusText}`);
+      throw new Error(`Invalid room status received: ${statusText}`);
+    }
+  } catch (error) {
+    console.error("Fetch error:", error);
+    throw error;
+  }
 }
 
+// closeGame function is already defined above
 
 /**
  * Получить текущую тему (prompt)
@@ -246,6 +258,16 @@ export async function getRoundResults(roomId: string): Promise<Record<string, Pl
   return apiFetch<Record<string, PlayerRoundResult>>(`/room/${roomId}/answers`);
 }
 
+/**
+ * Получить сводку по всем комнатам: список игроков и админ
+ */
+export async function getRoomsSummary(): Promise<Record<string, RoomSummary>> {
+  return apiFetch<Record<string, RoomSummary>>(`/games/summary`);
+}
+
 // --- WebSocket ---
-// WebSocket logic will be handled separately, likely in a hook.
-export const WEBSOCKET_URL = "ws://103.137.250.117:6952/ws/game"; // Base URL
+// WebSocket URLs for different connections
+const WS_BASE_URL = "ws://103.137.250.117:6952";
+export const WEBSOCKET_URL = `${WS_BASE_URL}/ws/game`; // For backward compatibility
+export const WEBSOCKET_GAME_URL = `${WS_BASE_URL}/ws/game`; // Game WebSocket endpoint
+export const WEBSOCKET_ROOMS_URL = `${WS_BASE_URL}/ws/rooms`; // Rooms monitoring endpoint

@@ -15,7 +15,7 @@ import {
   Player,
   closeGame, 
 } from '~/lib/api/client';
-import { Video, ResizeMode } from 'expo-av'; 
+
 
 // Helper type combining data for display
 interface DisplayResult extends PlayerRoundResult {
@@ -25,6 +25,7 @@ interface DisplayResult extends PlayerRoundResult {
 }
 
 export default function ResultsScreen() {
+
   // --- Hooks and State ---
   const params = useLocalSearchParams<{ gameId: string; userId?: string; isAdmin?: string }>();
   const gameId = params.gameId;
@@ -32,20 +33,20 @@ export default function ResultsScreen() {
   const isAdmin = params.isAdmin === 'true';
 
   // Use gameStatus from hook to drive state
-  const { gameStatus, error: wsError } = useWebSocketGame(gameId, userId);
+  const {
+    gameStatus,
+    error: wsError,
+    sendMessage,
+    readyState,
+  } = useWebSocketGame(gameId, userId);
 
   const [players, setPlayers] = useState<Player[]>([]); 
   const [roundResults, setRoundResults] = useState<Record<string, PlayerRoundResult> | null>(null);
   const [playerStats, setPlayerStats] = useState<Record<string, PlayerStats> | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false); 
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const adVideos = [
-    require('../../assets/videos/Запись 2025-04-29 020627.mp4'),
-    require('../../assets/videos/Запись экрана 2025-04-29 020404.mp4'),
-    require('../../assets/videos/Запись экрана 2025-04-29 020605.mp4'),
-  ];
-  const [adVideoIdx, setAdVideoIdx] = useState<number | null>(null); 
-  const [showAd, setShowAd] = useState(false); 
+  const [isContinuing, setIsContinuing] = useState(false);
+ 
 
   // --- Data Fetching ---
   const fetchPlayerData = useCallback(async () => {
@@ -103,50 +104,80 @@ export default function ResultsScreen() {
       }
   }, [gameStatus, fetchResultsData, roundResults, playerStats]);
 
-  // --- Ad Video Logic (static require) ---
-  useEffect(() => {
-    // show ad during GPT processing phase
-    if (
-      gameStatus === 'WAITING_FOR_GPT' ||
-      gameStatus === 'WAITING_FOR_ALL_ANSWERS_FROM_GPT'
-    ) {
-      if (adVideos.length > 0) {
-        const randomIdx = Math.floor(Math.random() * adVideos.length);
-        setAdVideoIdx(randomIdx);
-        setShowAd(true);
-      }
-    } else {
-      setShowAd(false);
-    }
-  }, [gameStatus]);
-
   // --- Game Status Change Handling (Navigation) ---
   useEffect(() => {
-    // Navigate if status indicates a new round or game closed/regressed
-    if (
-        gameStatus === 'MAIN_PLAYER_THINKING' ||
-        gameStatus === 'THEME_INPUT' ||
-        gameStatus === 'SCENARIO_PRESENTED' ||
-        gameStatus === 'WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT'
-    ) {
-        // Determine correct screen based on where the game regressed/progressed to
-        let pathname = '/game/scenario';
-        if (gameStatus === 'THEME_INPUT') pathname = '/game/thinking';
-        else if (gameStatus === 'WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT') pathname = '/game/answer';
-
+    // Логирование изменений статуса игры с дополнительной информацией
+    console.log('[ResultsScreen] Game status changed:', gameStatus, 'isAdmin:', isAdmin, 'userId:', userId);
+    
+    // Only navigate if we have a valid game status
+    if (gameStatus) {
+      console.log(`[ResultsScreen] Determining navigation for status: ${gameStatus}`);
+      
+      // Navigate based on game status
+      if (gameStatus === 'MAIN_PLAYER_THINKING' || gameStatus === 'THEME_INPUT') {
+        // ВАЖНО: При новом раунде отправляем ВСЕХ на thinking screen, 
+        // чтобы WebSocket сообщения могли правильно определить, кто админ в этом раунде
+        console.log('[ResultsScreen] Navigating all users to thinking screen for role determination');
         router.replace({
-            pathname: pathname as any, 
-            params: { gameId, userId, isAdmin: isAdmin.toString() },
+          pathname: '/game/thinking',
+          params: { gameId, userId, isAdmin: isAdmin.toString() }
         });
-    } else if (gameStatus === 'CLOSED') {
+      } 
+      else if (gameStatus === 'SCENARIO_PRESENTED') {
+        // Everyone goes to scenario screen when scenario is presented
+        console.log('[ResultsScreen] Scenario presented, navigating to scenario screen');
+        router.replace({
+          pathname: '/game/scenario',
+          params: { gameId, userId, isAdmin: isAdmin.toString() }
+        });
+      }
+      else if (gameStatus === 'WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT') {
+        // Everyone goes to answer screen when it's time to answer
+        console.log('[ResultsScreen] Time to answer, navigating to answer screen');
+        router.replace({
+          pathname: '/game/answer',
+          params: { gameId, userId, isAdmin: isAdmin.toString() }
+        });
+      }
+      else if (gameStatus === 'CLOSED') {
+        // Game is closed, go back to main menu
+        console.log('[ResultsScreen] Game closed, navigating to main menu');
         router.replace('/');
-    } else if (gameStatus === 'WAITING_FOR_PLAYERS') {
-        // If status goes all the way back to lobby
-        router.replace({ pathname: '/lobby/[gameId]', params: { gameId, userId, isAdmin: isAdmin.toString() } });
+      }
+      // For other statuses (like RESULTS_READY), stay on the results screen
     }
-    // Stay on this screen for WAITING_FOR_GPT, WAITING_FOR_ALL_ANSWERS_FROM_GPT, RESULTS_READY, STATS_READY, GAME_DONE
+  }, [gameStatus, isAdmin, userId, gameId]);
 
-  }, [gameStatus, gameId, userId, isAdmin]); 
+  // Handle continue button press
+  const handleContinue = () => {
+    if (!isAdmin) return;                       // защитимся
+    if (readyState !== WebSocket.OPEN) return;  // сокет упал
+    setIsContinuing(true);
+    console.log('[ResultsScreen] Отправляем YES по WebSocket. isAdmin =', isAdmin, 'userId:', userId);
+    sendMessage('YES');                         // ← ключевой момент
+    
+    // Для отладки - выводим текущие параметры
+    console.log('[ResultsScreen] Текущие параметры:', {
+      gameId, 
+      userId, 
+      isAdmin, 
+      gameStatus,
+      readyState
+    });
+    // Дальнейший роутинг оставляем на useEffect, который уже слушает gameStatus.
+  };
+
+  // Additional handling for WAITING_FOR_PLAYERS status (return to lobby)
+  useEffect(() => {
+    if (gameStatus === 'WAITING_FOR_PLAYERS') {
+      // If status goes all the way back to lobby
+      console.log('[ResultsScreen] Возврат в лобби');
+      router.replace({ 
+        pathname: '/lobby/[gameId]', 
+        params: { gameId, userId, isAdmin: isAdmin.toString() } 
+      });
+    }
+  }, [gameStatus, gameId, userId, isAdmin]);
 
   // --- UI Rendering ---
 
@@ -174,17 +205,15 @@ export default function ResultsScreen() {
     });
   }, [roundResults, playerStats, players, userId, getPlayerNickname]);
 
-
-  const handleBackToMenu = async () => {
-    if (isAdmin && gameId) {
-      try {
-        await closeGame(gameId);
-      } catch (error) {
-        console.error('Failed to close game:', error);
-        // Optionally show an error to the user, but always navigate
-      }
+  const handleBackToMenu = () => {
+    if (isAdmin) {
+      closeGame(gameId).catch((err) => {
+        console.error('Failed to close game:', err);
+      });
     }
-    router.replace('/'); 
+    
+    // Navigate back to main menu
+    router.replace('/');
   };
 
   // Determine screen state based on gameStatus
@@ -298,6 +327,27 @@ export default function ResultsScreen() {
           <Text className='text-center text-muted-foreground my-10'>Результаты пока недоступны.</Text>
         )}
 
+        {/* Общая статистика по раундам */}
+        {playerStats && Object.keys(playerStats).length > 0 && (
+          <Card className='mb-6'>
+            <CardHeader className='pb-2 bg-muted/20'>
+              <CardTitle className='text-lg text-center'>Общие результаты</CardTitle>
+            </CardHeader>
+            <CardContent className='pt-4'>
+              {Object.entries(playerStats).map(([pId, stats]) => (
+                <View key={pId} className='flex-row justify-between mb-2'>
+                  <Text className='text-sm'>
+                    {getPlayerNickname(pId)} {pId === userId ? '(Вы)' : ''}
+                  </Text>
+                  <Text className='text-sm text-muted-foreground'>
+                    выжил {stats.survivedCount} | погиб {stats.diedCount}
+                  </Text>
+                </View>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Back to Menu Button */}
         {isGameOver && !isLoadingData && (
             <View className='mt-8 mb-4'>
@@ -310,30 +360,40 @@ export default function ResultsScreen() {
             </View>
         )}
 
+        {/* Кнопки после окончания раунда */}
+        {showResults && !isWaitingForProcessing && (
+          <View className='mt-6 flex-row justify-between'>
+            <Button
+              onPress={handleContinue}
+              disabled={!isAdmin || isContinuing || readyState !== WebSocket.OPEN}
+              className='flex-1 mr-2'
+            >
+              {isContinuing ? (
+                <ActivityIndicator size='small' color='#ffffff' />
+              ) : (
+                <Text>Продолжить</Text>
+              )}
+            </Button>
+
+            <Button
+              onPress={handleBackToMenu}
+              variant='outline'
+              className='flex-1 ml-2'
+            >
+              <Text>В лобби</Text>
+            </Button>
+          </View>
+        )}
+
         {/* Waiting indicator if not game over but showing results (waiting for next round signal) */}
-        {showResults && !isGameOver && !isLoadingData && (
+        {showResults && !isGameOver && !isLoadingData && isContinuing && (
             <View className='items-center mt-4 mb-4'>
                 <ActivityIndicator size="small"/>
                 <Text className='text-muted-foreground mt-1'>Ожидание следующего раунда...</Text>
             </View>
         )}
       </ScrollView>
-      {/* Overlay Ad Video */}
-      {showAd && adVideoIdx !== null && (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100 }}>
-          <Video
-            source={adVideos[adVideoIdx]}
-            rate={1.0}
-            volume={1.0}
-            isMuted={false}
-            resizeMode={ResizeMode.CONTAIN}
-            shouldPlay
-            isLooping
-            style={{ width: 320, height: 180, borderRadius: 12, borderWidth: 2, borderColor: '#fff' }}
-          />
-          <Text style={{ color: '#fff', marginTop: 10 }}>Реклама</Text>
-        </View>
-      )}
+
     </View>
   );
 }

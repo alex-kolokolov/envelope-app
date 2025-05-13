@@ -4,10 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fb349854-ff30-4510-8235-fef4cc7619af" name="Changes" comment="final super">
+    <list default="true" id="fb349854-ff30-4510-8235-fef4cc7619af" name="Changes" comment="add ads">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/app.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/game/answer.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/game/answer.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/game/results.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/game/results.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/game/scenario.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/game/scenario.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/game/thinking.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/app/game/thinking.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hooks/useWebSocketGame.ts" beforeDir="false" afterPath="$PROJECT_DIR$/hooks/useWebSocketGame.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/api/client.ts" beforeDir="false" afterPath="$PROJECT_DIR$/lib/api/client.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
@@ -30,7 +33,7 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/alex-kolokolov/envelope-app&quot;,
-    &quot;accountId&quot;: &quot;153f3800-d31d-4131-a33a-01130f1bb203&quot;
+    &quot;accountId&quot;: &quot;790081ba-44af-4c2a-bca9-1ae475abeee5&quot;
   }
 }</component>
   <component name="ProjectColorInfo">{
@@ -48,6 +51,8 @@
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/mario/WebstormProjects/envelope&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -60,7 +65,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-f27c65a3e318-JavaScript-WS-251.23774.424" />
+        <option value="bundled-js-predefined-d6986cc7102b-6a121458b545-JavaScript-WS-251.25410.117" />
       </set>
     </attachedChunks>
   </component>
@@ -76,6 +81,14 @@
       <workItem from="1745866038434" duration="4835000" />
       <workItem from="1745875997087" duration="16000" />
       <workItem from="1745876037027" duration="2651000" />
+      <workItem from="1746962542725" duration="7662000" />
+      <workItem from="1746985502883" duration="682000" />
+      <workItem from="1746988624370" duration="234000" />
+      <workItem from="1746989052111" duration="1201000" />
+      <workItem from="1747065532234" duration="5000" />
+      <workItem from="1747066494289" duration="202000" />
+      <workItem from="1747066732817" duration="4200000" />
+      <workItem from="1747115020644" duration="327000" />
     </task>
     <task id="LOCAL-00001" summary="фыв">
       <option name="closed" value="true" />
@@ -101,7 +114,15 @@
       <option name="project" value="LOCAL" />
       <updated>1745876224787</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="add ads">
+      <option name="closed" value="true" />
+      <created>1746962557748</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1746962557748</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -121,6 +142,7 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="фыв" />
     <MESSAGE value="final super" />
-    <option name="LAST_COMMIT_MESSAGE" value="final super" />
+    <MESSAGE value="add ads" />
+    <option name="LAST_COMMIT_MESSAGE" value="add ads" />
   </component>
 </project>

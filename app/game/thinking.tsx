@@ -13,13 +13,38 @@ export default function ThinkingScreen() {
   const params = useLocalSearchParams<{ gameId: string; userId?: string; isAdmin?: string }>();
   const gameId = params.gameId;
   const userId = params.userId ?? null;
-  const isAdmin = params.isAdmin === 'true';
+  // Сначала берем из URL параметров
+  const [isAdmin, setIsAdmin] = useState(params.isAdmin === 'true');
+  
+  // Состояние для отслеживания полученных системных сообщений
+  const [systemInputPrompt, setSystemInputPrompt] = useState('');
+
+  // Отладочная информация при монтировании компонента
+  useEffect(() => {
+    console.log('[ThinkingScreen] Монтирование с параметрами:', {
+      gameId,
+      userId,
+      isAdmin,
+      rawIsAdminParam: params.isAdmin
+    });
+    
+    // При монтировании устанавливаем начальное значение из URL-параметра,
+    // но потом это будет переопределено на основе WebSocket сообщений
+    if (params.isAdmin === 'true' && !isAdmin) {
+      setIsAdmin(true);
+      console.log('[ThinkingScreen] Начальное значение isAdmin: true');
+    } else if (params.isAdmin === 'false' && isAdmin) {
+      setIsAdmin(false);
+      console.log('[ThinkingScreen] Начальное значение isAdmin: false');
+    }
+  }, []);  // Выполняем только при монтировании
 
   const [themeText, setThemeText] = useState('');
   const [timeLeft, setTimeLeft] = useState(THEME_INPUT_DURATION_S);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Исправляем тип таймера для совместимости с React Native
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // WebSocket connection
   const {
@@ -27,9 +52,65 @@ export default function ThinkingScreen() {
     error: wsError,
     readyState: wsReadyState,
     gameStatus,
+    currentTheme, // Получаем тему из WebSocket
     sendMessage,
     handleApiError, // Import the handleApiError function
   } = useWebSocketGame(gameId, userId);
+
+  // Получаем системные сообщения из сокета для определения роли
+  // Это упрощенная реализация - в идеале нужно добавить дополнительные поля в useWebSocketGame
+  const wsSystemMessages = React.useMemo(() => {
+    if (wsError) {
+      const errorMessage = wsError instanceof Error ? wsError.message : String(wsError);
+      if (errorMessage.includes('Введите ситуацию')) return ['Введите ситуацию'];
+      if (errorMessage.includes('Главный игрок вводит тему')) return ['Главный игрок вводит тему'];
+    }
+    
+    // Здесь мы должны получать эти сообщения из WebSocket прямого потока
+    // В реальном решении надо расширить useWebSocketGame, чтобы он возвращал lastSystemMessages
+    
+    // Временное решение - проверяем статус и возвращаем соответствующие сообщения
+    if (gameStatus === 'THEME_INPUT') return ['Главный игрок вводит тему'];
+    if (gameStatus === 'MAIN_PLAYER_THINKING' && systemInputPrompt === 'Введите ситуацию') {
+      return ['Введите ситуацию'];
+    }
+    
+    // Если нет явных сообщений, используем урл-параметр isAdmin для определения роли
+    return params.isAdmin === 'true' ? ['Введите ситуацию'] : ['Главный игрок вводит тему'];
+  }, [gameStatus, wsError, params.isAdmin, systemInputPrompt]);
+
+  // Наблюдаем за изменениями статуса и сообщениями для определения роли
+  useEffect(() => {
+    // Отладочное логирование
+    console.log('[ThinkingScreen] Статус игры:', gameStatus, 'Тема:', currentTheme, 'Системные сообщения:', wsSystemMessages);
+
+    // Определяем роль по WebSocket сообщениям - ЭТО ГЛАВНЫЙ ИСТОЧНИК ПРАВДЫ
+    // Независимо от URL-параметров и прочих факторов
+    const isAdminMessage = wsSystemMessages.includes('Введите ситуацию');
+    const isViewerMessage = wsSystemMessages.includes('Главный игрок вводит тему');
+    
+    console.log('[ThinkingScreen] Проверка сообщений:', { isAdminMessage, isViewerMessage, prev: isAdmin });
+    console.log('[ThinkingScreen] Все системные сообщения:', JSON.stringify(wsSystemMessages));
+    
+    // ВАЖНО! Сообщение "Введите ситуацию" имеет ПРИОРИТЕТ над "Главный игрок вводит тему"
+    // Если есть сообщение "Введите ситуацию" - это ВСЕГДА админ, независимо от других сообщений
+    if (isAdminMessage) {
+      setIsAdmin(true);
+      setSystemInputPrompt('Введите ситуацию');
+      console.log('[ThinkingScreen] Установлен админ по сообщению "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0441\u0438\u0442\u0443\u0430\u0446\u0438\u044e"');
+    } 
+    // Только если НЕТ сообщения "Введите ситуацию", но есть "Главный игрок вводит тему" - это не-админ
+    else if (isViewerMessage) {
+      setIsAdmin(false);
+      setSystemInputPrompt('Главный игрок вводит тему');
+      console.log('[ThinkingScreen] Установлен не-админ по сообщению "\u0413\u043b\u0430\u0432\u043d\u044b\u0439 \u0438\u0433\u0440\u043e\u043a \u0432\u0432\u043e\u0434\u0438\u0442 \u0442\u0435\u043c\u0443"');
+    }
+    
+    // Получена тема - запомним её для всех игроков
+    if (currentTheme && currentTheme.trim() !== '') {
+      setThemeText(currentTheme);
+    }
+  }, [gameStatus, currentTheme, wsSystemMessages, isAdmin]);
 
   // --- Timer Logic ---
   useEffect(() => {
@@ -123,8 +204,16 @@ export default function ThinkingScreen() {
         if (gameStatus === 'WAITING_FOR_PLAYERS' || gameStatus === 'CLOSED') {
              router.replace({ pathname: '/lobby/[gameId]', params: { gameId, userId, isAdmin: isAdmin.toString() } });
         } else if (gameStatus === 'WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT') {
-             // Navigate admin directly to answer screen
-             router.replace({ pathname: '/game/scenario', params: { gameId, userId, isAdmin: isAdmin.toString(), scenario: themeText } });
+             // Navigate all users to scenario screen when admin has selected a theme
+             router.replace({ 
+                 pathname: '/game/scenario', 
+                 params: { 
+                     gameId, 
+                     userId, 
+                     isAdmin: isAdmin.toString(), 
+                     scenario: themeText  // For admin this will have the theme, for non-admin it will be shown via WebSocket
+                 } 
+             });
         } 
         // Add other navigation cases if needed
     }
@@ -137,7 +226,7 @@ export default function ThinkingScreen() {
         className='flex-1'
     >
         <View className='flex-1 justify-center items-center p-4 bg-background'>
-            <Stack.Screen options={{ title: isAdmin ? 'Ввод темы' : 'Ожидание...' }} />
+            <Stack.Screen options={{ title: isAdmin ? 'Ввод темы' : 'Ожидание ввода темы' }} />
 
             {isAdmin ? (
                 <>
@@ -166,9 +255,21 @@ export default function ThinkingScreen() {
                     {wsError && <Text className='text-destructive text-center mt-2'>Ошибка WS: {wsError instanceof Error ? wsError.message : 'Проблема с соединением'}</Text>}
                 </>
             ) : (
+                // Интерфейс для не-админа
                 <>
                     <ActivityIndicator size='large' color={'hsl(var(--primary))'} />
-                    <Text className='mt-4 text-lg text-muted-foreground'>Ожидаем, пока админ выберет тему</Text>
+                    <Text className='mt-4 text-lg text-foreground font-medium'>
+                      {systemInputPrompt || 'Ожидаем, пока ведущий выберет тему'}
+                    </Text>
+                    
+                    {/* Показываем тему, если она пришла от сервера */}
+                    {currentTheme && currentTheme.trim() !== '' && (
+                      <View className='mt-4 p-4 bg-muted/20 rounded-md'>
+                        <Text className='text-center font-medium'>Тема:</Text>
+                        <Text className='text-center mt-2'>{currentTheme}</Text>
+                      </View>
+                    )}
+                    
                     {wsError && <Text className='text-destructive text-center mt-4'>Ошибка WS: {wsError instanceof Error ? wsError.message : 'Проблема с соединением'}</Text>}
                 </>
             )}

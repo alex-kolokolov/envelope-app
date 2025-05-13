@@ -1,12 +1,12 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { View, Alert, ActivityIndicator, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Text } from '~/components/ui/text';
 import { Button } from '~/components/ui/button';
 import { useNickname } from '~/hooks/useNickname';
 import { useGamesList } from '~/hooks/useGamesList';
-// Import connectToOpenedGame and RoomCache
-import { RoomCache, connectToOpenedGame } from '~/lib/api/client';
+// Import connectToOpenedGame, RoomCache, and getRoomsSummary
+import { RoomCache, connectToOpenedGame, getRoomsSummary, RoomSummary } from '~/lib/api/client';
 import { Header } from '~/components/screens/index/Header';
 import { GameListItem } from '~/components/screens/index/GameListItem';
 import { NicknameModal } from '~/components/screens/index/NicknameModal';
@@ -21,6 +21,8 @@ export default function AvailableGamesScreen() {
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false); // Loading state for connecting
   const [isEditingNickname, setIsEditingNickname] = useState(false); // New state for editing mode
+  const [roomSummaries, setRoomSummaries] = useState<Record<string, RoomSummary>>({});
+  const [isLoadingSummaries, setIsLoadingSummaries] = useState(false);
 
   const handleGamePress = useCallback(async (gameId: string) => {
     if (nickname) {
@@ -60,6 +62,20 @@ export default function AvailableGamesScreen() {
     setIsEditingNickname(true);
     setNicknameModalVisible(true);
   }, [nickname]);
+
+  // Refresh function that fetches both games and summaries
+  const refreshAll = useCallback(async () => {
+    await refreshGames();
+    try {
+      setIsLoadingSummaries(true);
+      const summaries = await getRoomsSummary();
+      setRoomSummaries(summaries);
+    } catch (error) {
+      console.error('Failed to refresh room summaries:', error);
+    } finally {
+      setIsLoadingSummaries(false);
+    }
+  }, [refreshGames]);
 
   const handleSaveNickname = useCallback(async () => {
     if (tempNickname.trim().length <= 16) {
@@ -101,13 +117,37 @@ export default function AvailableGamesScreen() {
      }
   }, [nickname]);
 
+  // Fetch room summaries when games list changes
+  useEffect(() => {
+    const fetchRoomSummaries = async () => {
+      if (games.length === 0) return;
+      
+      setIsLoadingSummaries(true);
+      try {
+        const summaries = await getRoomsSummary();
+        setRoomSummaries(summaries);
+      } catch (error) {
+        console.error('Failed to fetch room summaries:', error);
+      } finally {
+        setIsLoadingSummaries(false);
+      }
+    };
+    
+    fetchRoomSummaries();
+  }, [games]);
+
   // Memoize item data preparation to prevent unnecessary object creation on render
-  const getItemData = useCallback((item: RoomCache) => ({
-    id: item.id,
-    name: `Комната ${item.id.substring(0, 6)}...`,
-    playerCount: item.players?.length ?? 0,
-    maxPlayers: item.capacity,
-  }), []);
+  const getItemData = useCallback((item: RoomCache) => {
+    // Get admin name from room summaries if available
+    const adminName = roomSummaries[item.id]?.admin || null;
+    
+    return {
+      id: item.id,
+      name: adminName ? `Комната "${adminName}"` : `Комната ${item.id.substring(0, 6)}...`,
+      playerCount: item.players?.length ?? 0,
+      maxPlayers: item.capacity,
+    };
+  }, [roomSummaries]);
 
   // Optimize renderItem with useCallback to prevent recreation on each render
   const renderGameItem = useCallback(({ item }: { item: RoomCache }) => {
@@ -117,8 +157,8 @@ export default function AvailableGamesScreen() {
   }, [handleGamePress, isConnecting, getItemData]); // Added isConnecting dependency
 
   const ListContent = () => {
-    // Show list loading indicator OR connection indicator
-    if (isLoadingList || isConnecting) {
+    // Show list loading indicator OR connection indicator OR summaries loading
+    if (isLoadingList || isConnecting || isLoadingSummaries) {
       return <ActivityIndicator size="large" color="#0000ff" className="mt-10" />;
     }
     if (listError) {
@@ -139,8 +179,8 @@ export default function AvailableGamesScreen() {
         estimatedItemSize={80}
         contentContainerClassName='pb-4'
         ListEmptyComponent={<Text className='text-center text-muted-foreground mt-10'>Не найдено доступных игр.</Text>}
-        refreshing={isLoadingList}
-        onRefresh={refreshGames}
+        refreshing={isLoadingList || isLoadingSummaries}
+        onRefresh={refreshAll}
         // Optimize for iOS to prevent rerendering artifacts
         removeClippedSubviews={Platform.OS === 'ios'}
         // Maintain scroll position when data changes
