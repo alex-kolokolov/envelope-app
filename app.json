@@ -21,7 +21,15 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.alex123142.envelope",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        }
       }
     },
     "android": {
@@ -29,13 +37,19 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.alex123142.envelope"
+      "package": "com.alex123142.envelope",
+      "usesCleartextTraffic": true
     },
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png",
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "build": {
+        "env": {
+          "EXPO_REACT_NATIVE_WEB_ALLOW_HTTP_INSECURE_REQUESTS": "true"
+        }
+      }
     },
     "plugins": [
       "expo-router"
