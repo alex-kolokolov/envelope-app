@@ -2,6 +2,9 @@
   "name": "envelope",
   "main": "index.js",
   "version": "1.0.0",
+  "config": {
+    "legacy-peer-deps": true
+  },
   "scripts": {
     "dev": "expo start -c",
     "dev:web": "expo start -c --web",
@@ -10,10 +13,11 @@
     "ios": "expo start -c --ios",
     "web": "expo start -c --web",
     "clean": "rm -rf .expo node_modules",
+    "reset": "npm ci --legacy-peer-deps && npx expo install --check",
     "postinstall": "npx tailwindcss -i ./global.css -o ./node_modules/.cache/nativewind/global.css"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "^2.1.2",
+    "@react-native-async-storage/async-storage": "~2.1.0",
     "@react-navigation/native": "^7.0.0",
     "@rn-primitives/avatar": "~1.1.0",
     "@rn-primitives/portal": "~1.1.0",
@@ -21,11 +25,12 @@
     "@rn-primitives/slot": "~1.1.0",
     "@rn-primitives/tooltip": "~1.1.0",
     "@rn-primitives/types": "~1.1.0",
-    "@shopify/flash-list": "^1.8.0",
+    "@shopify/flash-list": "^1.6.3",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "expo": "~53.0.0",
     "expo-av": "~15.1.4",
+    "expo-build-properties": "~0.14.6",
     "expo-dev-client": "~5.1.8",
     "expo-linking": "~7.1.4",
     "expo-navigation-bar": "~4.2.4",
@@ -33,7 +38,6 @@
     "expo-splash-screen": "~0.30.8",
     "expo-status-bar": "~2.2.3",
     "expo-system-ui": "~5.0.7",
-    "expo-video": "^2.1.9",
     "immer": "^10.1.1",
     "lucide-react-native": "^0.378.0",
     "nativewind": "^4.1.23",
@@ -48,8 +52,7 @@
     "tailwind-merge": "^2.2.1",
     "tailwindcss": "3.3.5",
     "tailwindcss-animate": "^1.0.7",
-    "zustand": "^4.4.7",
-    "expo-build-properties": "~0.14.6"
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",

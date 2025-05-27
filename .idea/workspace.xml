@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fb349854-ff30-4510-8235-fef4cc7619af" name="Changes" comment="add ads" />
+    <list default="true" id="fb349854-ff30-4510-8235-fef4cc7619af" name="Changes" comment="add ads">
+      <change beforePath="$PROJECT_DIR$/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/app.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -80,6 +83,7 @@
       <workItem from="1747066732817" duration="4200000" />
       <workItem from="1747115020644" duration="728000" />
       <workItem from="1747116111802" duration="158000" />
+      <workItem from="1748371813067" duration="297000" />
     </task>
     <task id="LOCAL-00001" summary="фыв">
       <option name="closed" value="true" />
@@ -129,7 +133,15 @@
       <option name="project" value="LOCAL" />
       <updated>1747116122750</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="add ads">
+      <option name="closed" value="true" />
+      <created>1748371854151</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1748371854151</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
