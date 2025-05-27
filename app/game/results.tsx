@@ -192,24 +192,44 @@ export default function ResultsScreen() {
     }
   }, [gameId, fetchResultsViaDirectApi]);
 
+  // Keep track of which invalid results we've already tried to fetch directly
+  const [attemptedDirectFetchFor, setAttemptedDirectFetchFor] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
     // Если данные уже загружены, но они невалидны, попробуем прямые API запросы
     if (roundResults && players?.length > 0 && !isValidResultData(roundResults)) {
       console.log('[ResultsScreen] ⚠️ Detected invalid loaded results data, using direct API requests');
       
-      // Проверяем, что мы еще не пытались использовать прямые запросы
-      if (!isLoadingData && !fetchError) {
+      // Create a unique key to identify this set of invalid results
+      const resultsKey = Object.keys(roundResults).sort().join('-');
+      
+      // Only make the API request if we haven't already tried for these specific results
+      if (!isLoadingData && !fetchError && !attemptedDirectFetchFor[resultsKey]) {
+        // Mark that we've attempted to fetch this set of results
+        setAttemptedDirectFetchFor(prev => ({ ...prev, [resultsKey]: true }));
+        
         // Запускаем прямые API запросы
         setIsLoadingData(true);
         fetchResultsViaDirectApi()
           .then(data => {
             if (data) {
-              setRoundResults(data.results || {});
-              setPlayerStats(data.stats || {});
-              if (data.players && data.players.length > 0) {
-                setPlayers(data.players);
+              // Check if the new data is different from what we already have
+              const newResultsKey = Object.keys(data.results || {}).sort().join('-');
+              const isDifferentData = newResultsKey !== resultsKey;
+              
+              // Only update state if the data is different or valid
+              if (isDifferentData || isValidResultData(data.results)) {
+                setRoundResults(data.results || {});
+                setPlayerStats(data.stats || {});
+                if (data.players && data.players.length > 0) {
+                  setPlayers(data.players);
+                }
+                console.log('[ResultsScreen] ✅ Successfully used direct API data');
+              } else {
+                console.log('[ResultsScreen] ⚠️ Direct API returned the same invalid data, avoiding loop');
+                // Set a special flag to indicate we've tried and should stop retrying
+                setFetchError('Unable to get valid results data');
               }
-              console.log('[ResultsScreen] ✅ Successfully used direct API data');
             }
           })
           .catch(err => {
@@ -221,12 +241,27 @@ export default function ResultsScreen() {
           });
       }
     }
-  }, [roundResults, players, fetchResultsViaDirectApi, isLoadingData, fetchError]);
+  }, [roundResults, players, fetchResultsViaDirectApi, isLoadingData, fetchError, attemptedDirectFetchFor]);
 
   // Fetch player data on mount
   useEffect(() => {
       fetchPlayerData();
   }, [fetchPlayerData]);
+
+  // Track if we've detected a GPT error in the results
+  const [hasGptError, setHasGptError] = useState(false);
+  
+  // Check for GPT errors in results data
+  useEffect(() => {
+    if (roundResults) {
+      const hasError = Object.values(roundResults).some(r => r.gptAnswer === "Ошибка разбора ответа от GPT");
+      setHasGptError(hasError);
+      
+      if (hasError) {
+        console.log('[ResultsScreen] 🚨 Detected GPT parsing error in results');
+      }
+    }
+  }, [roundResults]);
 
   // Fetch results/stats based on gameStatus
   useEffect(() => {
@@ -247,9 +282,12 @@ export default function ResultsScreen() {
       
       if (shouldFetchResults) {
           // Fetch data only if we don't have it yet or need refresh
-          if (!roundResults || !playerStats) {
+          // Skip fetching if we already know there's a GPT error (avoid loops)
+          if ((!roundResults || !playerStats) && !hasGptError) {
              console.log('[ResultsScreen] 🔍 Fetching results and stats data...');
              fetchResultsData();
+          } else if (hasGptError) {
+             console.log('[ResultsScreen] ⚠️ Skipping fetch due to known GPT error');
           } else {
              console.log('[ResultsScreen] ✅ Already have results data, skipping fetch');
           }
@@ -259,8 +297,9 @@ export default function ResultsScreen() {
           console.log('[ResultsScreen] 🔄 Resetting results due to status change to:', gameStatus);
           setRoundResults(null);
           setPlayerStats(null);
+          setHasGptError(false); // Reset GPT error flag on status change
       }
-  }, [gameStatus, fetchResultsData, roundResults, playerStats]);
+  }, [gameStatus, fetchResultsData, roundResults, playerStats, hasGptError]);
 
   // --- Game Status Change Handling (Navigation) ---
   useEffect(() => {
@@ -398,19 +437,34 @@ export default function ResultsScreen() {
     // Проверяем, что есть хотя бы один результат
     if (!results || Object.keys(results).length === 0) return false;
     
+    // Проверяем на наличие ошибки от GPT
+    const hasGptError = Object.values(results).some(r => 
+      r.gptAnswer === "Ошибка разбора ответа от GPT" || 
+      r.result === "Неизвестно"
+    );
+    
+    // Если есть ошибка от GPT, считаем результаты невалидными
+    // Но мы все равно покажем ответы пользователей и специальное сообщение
+    if (hasGptError) {
+      console.log('[ResultsScreen] 🚨 GPT parsing error detected in results');
+      return false;
+    }
+    
     // Проверяем, что хотя бы 50% результатов содержат необходимые поля
-    // Это позволит отображать частичные результаты, если некоторые ответы еще не обработаны
     let validCount = 0;
     const totalCount = Object.keys(results).length;
     
     for (const key in results) {
       const result = results[key];
       
-      // Учитываем только валидные результаты
+      // Учитываем все возможные форматы результатов
       if (result.result && result.userAnswer && result.gptAnswer && 
           typeof result.result === 'string' && 
-          (result.result.toLowerCase() === 'выжил' || result.result.toLowerCase() === 'погиб')) {
+          (result.result.toLowerCase() === 'выжил' || 
+           result.result.toLowerCase() === 'погиб' || 
+           result.result.toLowerCase() === 'не выжил')) {
         validCount++;
+        console.log(`[ResultsScreen] ✅ Valid result for player ${key}: ${result.result}`);
       } else {
         console.log(`[ResultsScreen] ⚠️ Invalid result data for player ${key}:`, result);
       }
@@ -640,6 +694,42 @@ export default function ResultsScreen() {
         {/* No Results Message */}
         {!isLoadingData && !fetchError && showResults && displayResults.length === 0 && (
           <Text className='text-center text-muted-foreground my-10'>Результаты пока недоступны.</Text>
+        )}
+        
+        {/* GPT Error Message */}
+        {!isLoadingData && roundResults && Object.values(roundResults).some(r => r.gptAnswer === "Ошибка разбора ответа от GPT") && (
+          <Card className='mb-6 border-warning'>
+            <CardHeader className='pb-2 bg-warning/10'>
+              <CardTitle className='text-lg text-center text-warning'>Ошибка обработки ответа</CardTitle>
+            </CardHeader>
+            <CardContent className='pt-4'>
+              <Text className='text-center mb-4'>Возникла проблема при обработке ответа. Вы можете вернуться в лобби или продолжить игру.</Text>
+              
+              <View className='flex-row justify-between mt-4'>
+                <Button
+                  onPress={handleBackToMenu}
+                  variant='outline'
+                  className='flex-1 mr-2'
+                >
+                  <Text>Вернуться в лобби</Text>
+                </Button>
+                
+                {isAdmin && (
+                  <Button
+                    onPress={handleContinue}
+                    disabled={isContinuing || readyState !== WebSocket.OPEN}
+                    className='flex-1 ml-2'
+                  >
+                    {isContinuing ? (
+                      <ActivityIndicator size='small' color='#ffffff' />
+                    ) : (
+                      <Text>Начать новый раунд</Text>
+                    )}
+                  </Button>
+                )}
+              </View>
+            </CardContent>
+          </Card>
         )}
 
         {/* Общая статистика по раундам */}
