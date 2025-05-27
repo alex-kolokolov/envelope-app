@@ -145,17 +145,52 @@ export default function AnswerScreen() {
 
   // --- Game Status Change Handling (Navigation) ---
   useEffect(() => {
-    console.log("AnswerScreen Status Changed:", gameStatus);
+    console.log(`[AnswerScreen] Status Changed: ${gameStatus}, isAdmin: ${isAdmin}, userId: ${userId}, scenarioParam: ${params.scenario}`);
+    
+    // Enhanced logging for debugging navigation flow
+    console.log(`[AnswerScreen] 📊 Current state: gameStatus=${gameStatus}, hasSubmitted=${hasSubmitted}, isWsConnected=${isWsConnected}`);
+    
+    // Force an immediate re-render if isAdmin was passed as a string instead of boolean
+    if (!isAdmin && params.isAdmin === 'true') {
+      console.log(`[AnswerScreen] ⚠️ isAdmin flag incorrect (string vs boolean issue). Fixing...`);
+      
+      // Add random query param to prevent stale navigation cache issues
+      const randomParam = Date.now().toString();
+      
+      router.replace({
+        pathname: '/game/answer',
+        params: { 
+          gameId, 
+          userId, 
+          isAdmin: 'true', 
+          scenario: scenario,
+          _: randomParam // Cache-busting parameter
+        }
+      });
+      return;
+    }
+    
     // Navigate when results are ready or game is done/closed
     if (
       gameStatus === 'RESULTS_READY' ||
       gameStatus === 'STATS_READY' ||
       gameStatus === 'GAME_DONE'
     ) {
-      console.log(`Navigating to results screen due to status: ${gameStatus}`);
+      console.log(`[AnswerScreen] Navigating to results screen due to status: ${gameStatus}`);
+      console.log(`[AnswerScreen] 📝 Passing scenario to results: "${scenario}"`);
+      
+      // Add a random parameter for cache busting
+      const randomParam = Date.now().toString();
+      
       router.replace({ // Use replace
         pathname: '/game/results',
-        params: { gameId, userId, isAdmin: isAdmin.toString() },
+        params: { 
+          gameId, 
+          userId, 
+          isAdmin: isAdmin.toString(),
+          scenario: scenario,
+          _: randomParam // Cache-busting parameter
+        },
       });
     }
     // Handle other status changes like game closing unexpectedly or regressing

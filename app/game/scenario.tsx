@@ -20,11 +20,15 @@ export default function ScenarioScreen() {
     currentTheme: wsTheme, // Theme from WebSocket for non-admins
     error: wsError,
     readyState: wsReadyState,
+    lastSystemMessage, // Добавляем для отладки
   } = useWebSocketGame(gameId, userId);
 
   // Determine the theme to display and pass forward
   // Admin sees their submitted theme immediately via param, others wait for WebSocket
   const themeToUse = isAdmin && adminThemeParam ? adminThemeParam : wsTheme;
+  
+  // Debug log for theme values to track issues
+  console.log(`[ScenarioScreen] Theme values - adminThemeParam: "${adminThemeParam}", wsTheme: "${wsTheme}", themeToUse: "${themeToUse}"`);
 
   // --- Timer for MAIN_PLAYER_THINKING ---
   const MAIN_PLAYER_THINKING_DURATION_S = isAdmin ? 60 : 65; // +5 секунд для не-админа
@@ -86,15 +90,36 @@ export default function ScenarioScreen() {
 
   // --- Game Status Change Handling (Navigation) ---
   useEffect(() => {
-    console.log("ScenarioScreen Status Changed:", gameStatus);
+    console.log(`[ScenarioScreen] Status Changed: ${gameStatus}, isAdmin: ${isAdmin}, theme: ${themeToUse}, wsTheme: ${wsTheme}`);
+
+    // Для отладки: добавим важную информацию о содержании сообщений от сервера
+    if (gameStatus === 'WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT') {
+      console.log(`[ScenarioScreen] ⚠️ КРИТИЧЕСКАЯ ТОЧКА НАВИГАЦИИ - ДОЛЖЕН ПЕРЕЙТИ НА ANSWER!`);
+    }
 
     // Navigate when the status indicates it's time for player input
     if (gameStatus === 'WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT') {
-        console.log(`Navigating to answer screen due to status: ${gameStatus}`);
+        console.log(`[ScenarioScreen] 🚨 Navigating to answer screen due to status: ${gameStatus}, isAdmin: ${isAdmin}`);
+        
+        // Explicitly get the latest theme values to avoid stale closure issues
+        const currentThemeToUse = isAdmin && adminThemeParam ? adminThemeParam : wsTheme;
+        console.log(`[ScenarioScreen] 📝 Current theme values - adminThemeParam: "${adminThemeParam}", wsTheme: "${wsTheme}"`);
+        console.log(`[ScenarioScreen] 📝 Theme to use: "${currentThemeToUse || 'undefined'}"`);
+        
+        // Add random query param to prevent stale navigation cache issues
+        const randomParam = Date.now().toString();
+        
+        // Forcibly navigate to answer screen for ALL users when the status changes - fixes navigation issue
         router.replace({ // Use replace to prevent going back here
             pathname: '/game/answer',
             // Pass the determined theme (param for admin, hook for others) as 'scenario'
-            params: { gameId, userId, isAdmin: isAdmin.toString(), scenario: themeToUse ?? 'Error: Scenario not found' },
+            params: { 
+                gameId, 
+                userId, 
+                isAdmin: isAdmin.toString(), 
+                scenario: isAdmin && adminThemeParam ? adminThemeParam : wsTheme || '', // Get fresh theme values to avoid stale data
+                _: randomParam // Cache-busting parameter
+            },
         });
     }
     // Handle other status changes like game ending, closing, or regressing
@@ -106,7 +131,21 @@ export default function ScenarioScreen() {
         console.log(`Game ended or closed (Status: ${gameStatus}). Navigating back to index.`);
         // Consider navigating to a results screen first if GAME_DONE/STATS_READY
         if (gameStatus === 'GAME_DONE' || gameStatus === 'STATS_READY') {
-             router.replace({ pathname: '/game/results', params: { gameId, isAdmin: isAdmin.toString() } });
+             console.log(`[ScenarioScreen] 📝 Navigating to results with theme: "${themeToUse || 'undefined'}"`);
+             
+             // Add a random parameter for cache busting
+             const randomParam = Date.now().toString();
+             
+             router.replace({ 
+                pathname: '/game/results', 
+                params: { 
+                  gameId, 
+                  userId, 
+                  isAdmin: isAdmin.toString(),
+                  scenario: themeToUse || '', // Pass the theme as scenario
+                  _: randomParam // Cache-busting parameter
+                } 
+             });
         } else {
              router.replace('/'); // Go back to the main screen for CLOSED
         }
@@ -119,7 +158,7 @@ export default function ScenarioScreen() {
      }
      // No navigation needed if status is SCENARIO_PRESENTED or UNKNOWN/Connecting
 
-  }, [gameStatus, gameId, isAdmin, themeToUse]); // Use themeToUse in dependency array
+  }, [gameStatus, gameId, isAdmin, adminThemeParam, wsTheme]); // Depend on source values instead of derived themeToUse
 
   // --- UI Rendering ---
   // Use themeToUse for loading check and display
@@ -147,6 +186,19 @@ export default function ScenarioScreen() {
         </>
       ) : wsError ? (
          <Text className='text-destructive text-center'>Ошибка WebSocket: {wsError instanceof Error ? wsError.message : 'Проблема с соединением'}</Text>
+      ) : gameStatus === 'MAIN_PLAYER_THINKING' && !isAdmin ? (
+        <View className='items-center'>
+          <Text className='text-xl font-semibold mb-6 text-center text-foreground'>
+            Ожидание ведущего
+          </Text>
+          <Text className='text-lg text-center mb-8 text-foreground p-4 border border-border rounded bg-card'>
+            Ведущий думает над темой игры. Пожалуйста, подождите...
+          </Text>
+          <ActivityIndicator size="large" className='mb-4' />
+          <Text className='text-muted-foreground italic'>
+             Статус: Ожидание ведущего
+          </Text>
+        </View>
       ) : (
         <View className='items-center'>
           <Text className='text-xl font-semibold mb-6 text-center text-foreground'>

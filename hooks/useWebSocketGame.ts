@@ -1,20 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { WEBSOCKET_URL } from '../lib/api/client'; // Import base WebSocket URL
-
-// Define the possible game statuses based on the plan
-export type GameStatus =
-  | 'UNKNOWN' // Initial or unparsed status
-  | 'WAITING_FOR_PLAYERS'
-  | 'MAIN_PLAYER_THINKING'
-  | 'THEME_INPUT' // Custom status for "[SYSTEM]: Главный игрок вводит тему"
-  | 'SCENARIO_PRESENTED' // Custom status for "[SYSTEM]: Ситуация: {THEME_TEXT}"
-  | 'WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT' // From Swagger
-  | 'WAITING_FOR_GPT' // Custom status for potential GPT processing phase
-  | 'WAITING_FOR_ALL_ANSWERS_FROM_GPT' // From Swagger
-  | 'RESULTS_READY' // Custom status for "[RESULT]: ..."
-  | 'STATS_READY' // Custom status for "[ALL_STATS]: ..."
-  | 'GAME_DONE' // From Swagger
-  | 'CLOSED'; // From Swagger
+import WebSocketManager, { GameStatus } from '../lib/websocket/WebSocketManager';
 
 // Define the state and functions returned by the hook
 interface UseWebSocketGameResult {
@@ -26,21 +11,16 @@ interface UseWebSocketGameResult {
   currentTheme: string | null; // Current theme/scenario text
   closeConnection: () => void; // Function to manually close the connection
   handleApiError: (error: any, gameId: string, userId: string | null, isAdmin: boolean) => void; // New function to handle API errors
+  lastSystemMessage: string | null; // Last system message received for role determination
+  hasAdminMessage: boolean; // Flag indicating if admin message was received
 }
 
-const MAX_RECONNECT_ATTEMPTS = 5;
-const RECONNECT_INTERVAL_MS = 3000; // 3 seconds
-
-// Regex patterns for parsing system messages
-const statusRegex = /\[SYSTEM\]: Статус — (.*)/;
-const themeInputRegex = /\[SYSTEM\]: Главный игрок вводит тему/;
-const situationRegex = /\[SYSTEM\]: Ситуация: (.*)/;
-const resultRegex = /\[RESULT\]:/;
-const statsRegex = /\[ALL_STATS\]:/;
+// Экспортируем GameStatus из WebSocketManager
+export type { GameStatus } from '../lib/websocket/WebSocketManager';
 
 /**
- * Custom hook to manage WebSocket connection for a game room.
- * Handles connection, disconnection, message receiving, parsing game status, and automatic reconnection.
+ * Custom hook to manage WebSocket connection for a game room using WebSocketManager.
+ * Provides persistent connections that survive component unmounting/remounting.
  *
  * @param roomId The ID of the game room.
  * @param userId The ID of the current user.
@@ -49,154 +29,110 @@ const statsRegex = /\[ALL_STATS\]:/;
 export function useWebSocketGame(roomId: string | null, userId: string | null): UseWebSocketGameResult {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [error, setError] = useState<Event | Error | null>(null);
-  const [readyState, setReadyState] = useState<number>(WebSocket.CLOSED); // Initial state
-  const [gameStatus, setGameStatus] = useState<GameStatus>('UNKNOWN'); // New state for game status
-  const [currentTheme, setCurrentTheme] = useState<string | null>(null); // New state for theme/scenario
-  const ws = useRef<WebSocket | null>(null);
-  const reconnectAttempts = useRef<number>(0);
-  const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
-  const isManualClose = useRef<boolean>(false); // Flag for manual closure
+  const [readyState, setReadyState] = useState<number>(WebSocket.CLOSED);
+  const [gameStatus, setGameStatus] = useState<GameStatus>('UNKNOWN');
+  const [currentTheme, setCurrentTheme] = useState<string | null>(null);
+  const [lastSystemMessage, setLastSystemMessage] = useState<string | null>(null);
+  const [hasAdminMessage, setHasAdminMessage] = useState<boolean>(false);
+  
+  const wsManager = useRef(WebSocketManager.getInstance());
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  // Static ws reference to persist across renders
-  const persistentWs = useRef<WebSocket | null>(null);
-
-  const connect = useCallback(() => {
-    // Check if we already have a valid connection - use persistentWs instead of ws
-    if (!roomId || !userId || persistentWs.current?.readyState === WebSocket.OPEN || persistentWs.current?.readyState === WebSocket.CONNECTING) {
-        console.log('WebSocket connect skipped:', { roomId, userId, readyState: persistentWs.current?.readyState });
-        return; // Don't connect if no IDs or already connected/connecting
-    }
-
-    // Clear any existing reconnect timeout
-    if (reconnectTimeout.current) {
-        clearTimeout(reconnectTimeout.current);
-        reconnectTimeout.current = null;
-    }
-
-    // Reset state on new connection attempt
-    isManualClose.current = false; // Reset manual close flag
-    setIsConnected(false);
-    setError(null);
-    setGameStatus('UNKNOWN');
-    setCurrentTheme(null);
-
-    const wsUrl = `${WEBSOCKET_URL}?roomId=${roomId}&userId=${userId}`;
-    console.log(`Attempting to connect WebSocket: ${wsUrl}`);
-    persistentWs.current = new WebSocket(wsUrl);
-    ws.current = persistentWs.current; // Update regular ref for backward compatibility
-    setReadyState(persistentWs.current.readyState);
-
-    persistentWs.current.onopen = () => {
-      console.log('WebSocket Connected');
-      setIsConnected(true);
-      setError(null);
-      setReadyState(persistentWs.current?.readyState ?? WebSocket.OPEN);
-      reconnectAttempts.current = 0; // Reset reconnect attempts on successful connection
-    };
-
-    persistentWs.current.onmessage = (event) => {
-// --- START DEBUG LOG ---
-      console.log('[DEBUG] Raw WebSocket message received:', event.data);
-      // --- END DEBUG LOG ---
-      // Log raw data for debugging
-      console.log('Raw WebSocket Data:', event.data);
-
-      // --- REMOVED JSON PARSING BLOCK ---
-
-      if (typeof event.data === 'string') {
-          // Handle string messages (system status updates, themes, etc.)
-          const messageText = event.data;
-          console.log('Received WebSocket message:', messageText);
-          let statusUpdated = false;
-
-          // Try matching known system message patterns
-          const statusMatch = messageText.match(statusRegex);
-          if (statusMatch && statusMatch[1]) {
-              const rawStatus = statusMatch[1].trim() as GameStatus; // Assume it matches GameStatus for now
-              // Basic validation/mapping if needed
-              // Example: if (rawStatus === 'SOME_BACKEND_STATUS') setGameStatus('CORRESPONDING_FRONTEND_STATUS');
-              setGameStatus(rawStatus);
-              console.log('Parsed Game Status:', rawStatus);
-              statusUpdated = true;
-          } else if (themeInputRegex.test(messageText)) {
-              setGameStatus('THEME_INPUT');
-              console.log('Parsed Game Status: THEME_INPUT');
-              statusUpdated = true;
-          } else if (situationRegex.test(messageText)) {
-              const situationMatch = messageText.match(situationRegex);
-              if (situationMatch && situationMatch[1]) {
-                  const theme = situationMatch[1].trim();
-                  setCurrentTheme(theme);
-                  // After scenario parsing, transition directly to answer phase
-                  setGameStatus('WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT');
-                  console.log('Parsed Game Status: WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT, Theme:', theme);
-                  statusUpdated = true;
-              }
-          } else if (messageText === '[SYSTEM]: Ответ сохранён') {
-              // Map 'Ответ сохранён' system message to GPT processing phase
-              setGameStatus('WAITING_FOR_GPT');
-              console.log('Parsed Game Status: WAITING_FOR_GPT (from Ответ сохранён)');
-              statusUpdated = true;
-          } else if (resultRegex.test(messageText)) {
-              setGameStatus('RESULTS_READY');
-              console.log('Parsed Game Status: RESULTS_READY');
-              statusUpdated = true;
-          } else if (statsRegex.test(messageText)) {
-              setGameStatus('STATS_READY');
-              console.log('Parsed Game Status: STATS_READY');
-              statusUpdated = true;
-          } else if (messageText === '[SYSTEM]: Введите ситуацию') { // Add check for the new message
-              setGameStatus('MAIN_PLAYER_THINKING'); // Map to MAIN_PLAYER_THINKING as per user feedback
-              console.log('Parsed Game Status: MAIN_PLAYER_THINKING (from Введите ситуацию)');
-              statusUpdated = true;
-          }
-
-          if (statusUpdated) {
-              setError(null); // Clear errors if we successfully parsed a known message
-          } else {
-              console.warn('Unhandled string message:', messageText);
-              // Optionally set an error or leave status as is
-          }
-
-      } else {
-          // Handle binary data or other types if necessary
-          console.log('Received non-string WebSocket message:', typeof event.data);
+  // Subscribe to WebSocket manager when roomId/userId change
+  useEffect(() => {
+    if (!roomId || !userId) {
+      // Cleanup existing subscription
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
       }
-    };
-
-    persistentWs.current.onerror = (event) => {
-      console.error('WebSocket Error:', event);
-      setError(event instanceof Error ? event : new Error('WebSocket error occurred')); // Store the error event
-      setReadyState(persistentWs.current?.readyState ?? WebSocket.CLOSED);
-    };
-
-    persistentWs.current.onclose = (event) => {
-      console.log(`WebSocket Closed: Code=${event.code}, Reason=${event.reason}, Clean=${event.wasClean}`);
-      const manualClose = isManualClose.current; // Capture flag before resetting
-      isManualClose.current = false; // Reset flag
-
+      
+      // Reset state
       setIsConnected(false);
-      setReadyState(persistentWs.current?.readyState ?? WebSocket.CLOSED);
-      setGameStatus('CLOSED'); // Set status to CLOSED on disconnect
-      setCurrentTheme(null); // Clear theme on disconnect
-      // Don't nullify the ref here to allow reconnection
+      setError(null);
+      setReadyState(WebSocket.CLOSED);
+      setGameStatus('UNKNOWN');
+      setCurrentTheme(null);
+      setLastSystemMessage(null);
+      setHasAdminMessage(false);
+      return;
+    }
 
-      // Attempt to reconnect ONLY if the closure was unexpected and NOT manual
-      if (!manualClose && !event.wasClean && reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
-        reconnectAttempts.current++;
-        console.log(`Attempting to reconnect (${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})...`);
-        reconnectTimeout.current = setTimeout(connect, RECONNECT_INTERVAL_MS * Math.pow(2, reconnectAttempts.current -1)); // Exponential backoff
-      } else if (!manualClose && !event.wasClean) {
-          console.error('WebSocket reconnect limit reached.');
-          setError(new Error('WebSocket connection lost and reconnect limit reached.'));
-      } else if (manualClose) {
-          console.log('WebSocket closed manually, reconnection prevented.');
-          ws.current = null; // Only nullify ref on manual close
-          persistentWs.current = null; // Only nullify persistent ref on manual close
+    // React Native doesn't have window.location.href like browsers do
+    // Instead, we'll use the incoming parameters directly
+    console.log(`[useWebSocketGame] 🔍 Using direct params for room: ${roomId} and user: ${userId}`);
+
+    console.log(`[useWebSocketGame] Subscribing to ${roomId}:${userId}`);
+
+    // Create subscriber
+    const subscriber = {
+      onStatusChange: (status: GameStatus) => {
+        console.log(`[useWebSocketGame] 🔄 Status changed to: ${status}, roomId: ${roomId}, userId: ${userId}`);
+        
+        // First set the game status
+        setGameStatus(status);
+        
+        // Extra logging for critical state transitions
+        if (status === 'WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT') {
+          console.log(`[useWebSocketGame] 🚨 CRITICAL STATUS CHANGE: ${status} - should navigate to answer screen`);
+          console.log(`[useWebSocketGame] 📝 Current theme: "${currentTheme}"`);
+        }
+        
+        // Reset admin flag when returning to lobby or waiting for players (new game session)
+        if (status === 'WAITING_FOR_PLAYERS' || status === 'STATS_READY') {
+          setHasAdminMessage(false);
+        }
+      },
+      
+      onThemeChange: (theme: string | null) => {
+        console.log(`[useWebSocketGame] Theme changed to: ${theme}`);
+        setCurrentTheme(theme);
+      },
+      
+      onConnectionChange: (connected: boolean) => {
+        console.log(`[useWebSocketGame] Connection changed to: ${connected}`);
+        setIsConnected(connected);
+      },
+      
+      onError: (err: Event | Error | null) => {
+        console.log(`[useWebSocketGame] Error changed to:`, err);
+        setError(err);
+      },
+      
+      onSystemMessage: (message: string, isAdminMessage: boolean) => {
+        console.log(`[useWebSocketGame] System message: ${message}, isAdmin: ${isAdminMessage}`);
+        setLastSystemMessage(message);
+        if (isAdminMessage) {
+          console.log(`[useWebSocketGame] 🔑 Admin message detected, setting hasAdminMessage=true for ${userId}`);
+          setHasAdminMessage(true);
+        }
+        
+        // Explicit check for admin message in the content regardless of flag
+        if (message.includes('Введите ситуацию')) {
+          console.log(`[useWebSocketGame] 🔑 Admin message content detected ("Введите ситуацию"), forcing hasAdminMessage=true`);
+          setHasAdminMessage(true);
+        }
+      },
+      
+      onReadyStateChange: (state: number) => {
+        console.log(`[useWebSocketGame] Ready state changed to: ${state}`);
+        setReadyState(state);
       }
     };
 
-  }, [roomId, userId]); // Dependencies for connection logic
+    // Subscribe to manager
+    const unsubscribe = wsManager.current.subscribe(roomId, userId, subscriber);
+    unsubscribeRef.current = unsubscribe;
+
+    // Cleanup function
+    return () => {
+      console.log(`[useWebSocketGame] Unsubscribing from ${roomId}:${userId}`);
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+    };
+  }, [roomId, userId]);
 
   // Handle API errors with redirection in case of 500 status
   const handleApiError = useCallback((error: any, gameId: string, userId: string | null, isAdmin: boolean) => {
@@ -227,82 +163,31 @@ export function useWebSocketGame(roomId: string | null, userId: string | null): 
     }
   }, []);
 
-  // Effect to establish and clean up the connection
-  useEffect(() => {
-    if (roomId && userId) {
-      connect();
-    } else {
-        // If roomId or userId becomes null, ensure cleanup
-        if (ws.current) {
-            console.log("Closing WebSocket due to missing roomId or userId.");
-            isManualClose.current = true; // Prevent reconnect on this close
-            ws.current.close(1000, "Client disconnected"); // Clean close
-            ws.current = null;
-            setIsConnected(false);
-            setReadyState(WebSocket.CLOSED);
-            setGameStatus('CLOSED');
-            setCurrentTheme(null);
-        }
-        if (reconnectTimeout.current) {
-            clearTimeout(reconnectTimeout.current);
-            reconnectTimeout.current = null;
-        }
-    }
-
-    // Cleanup function - только очищаем таймеры, но НЕ закрываем соединение
-    return () => {
-      if (reconnectTimeout.current) {
-        clearTimeout(reconnectTimeout.current);
-      }
-      
-      // Сохраняем состояние WebSocket при unmount компонента
-      console.log('Component unmounting, but WebSocket connection maintained.');
-      
-      // Не закрываем соединение при unmount, только отмечаем статус в состоянии компонента
-      // Соединение будет закрыто только при вызове closeConnection или изменении roomId/userId
-    };
-  }, [roomId, userId, connect]); // Re-run effect if roomId, userId, or connect function changes
-
   // Function to send messages
   const sendMessage = useCallback((message: any) => {
-    // Use persistentWs instead of ws to ensure message goes through even after component remounts
-    if (persistentWs.current && persistentWs.current.readyState === WebSocket.OPEN) {
-      try {
-        // Expecting message to be a string for this game's protocol based on user description
-        const messageString = typeof message === 'string' ? message : JSON.stringify(message);
-        console.log('Sending WebSocket Message:', messageString);
-        persistentWs.current.send(messageString);
-      } catch (e) {
-        console.error('Failed to send WebSocket message:', message, e);
-         setError(e instanceof Error ? e : new Error('Failed to send message'));
-      }
-    } else {
-      console.warn('WebSocket not connected. Cannot send message.');
-       setError(new Error('WebSocket not connected.'));
+    if (!roomId || !userId) {
+      console.warn('[useWebSocketGame] Cannot send message - missing roomId or userId');
+      setError(new Error('Cannot send message - missing room or user ID'));
+      return;
     }
-  }, []); // No dependencies needed as it uses the ref
+
+    const success = wsManager.current.sendMessage(roomId, userId, message);
+    if (!success) {
+      setError(new Error('Failed to send message - connection not ready'));
+    }
+  }, [roomId, userId]);
 
   // Function to manually close the connection
   const closeConnection = useCallback(() => {
-      if (persistentWs.current) {
-          console.log('Manually closing WebSocket connection.');
-          isManualClose.current = true; // Set flag to prevent reconnection
-          persistentWs.current.close(1000, "User initiated disconnect"); // Normal closure
-          // State updates will happen in the onclose handler
-          // Don't nullify refs here - let onclose handle that for manual closes
-          // Explicitly update state here as well for immediate feedback if needed
-          setIsConnected(false);
-          setReadyState(WebSocket.CLOSING); // Indicate closing state
-          setGameStatus('CLOSED');
-          setCurrentTheme(null);
-      }
-      if (reconnectTimeout.current) {
-          clearTimeout(reconnectTimeout.current); // Prevent any pending reconnect
-          reconnectTimeout.current = null;
-      }
-  }, []); // No dependencies
+    if (!roomId || !userId) {
+      console.warn('[useWebSocketGame] Cannot close connection - missing roomId or userId');
+      return;
+    }
 
-  // Return object including the new closeConnection function
+    console.log(`[useWebSocketGame] Closing connection for ${roomId}:${userId}`);
+    wsManager.current.closeConnection(roomId, userId);
+  }, [roomId, userId]);
+
   return {
     isConnected,
     error,
@@ -311,6 +196,8 @@ export function useWebSocketGame(roomId: string | null, userId: string | null): 
     gameStatus,
     currentTheme,
     closeConnection,
-    handleApiError, // Add the new error handling function
+    handleApiError,
+    lastSystemMessage,
+    hasAdminMessage,
   };
 }

@@ -35,6 +35,7 @@ export default function LobbyScreen() {
   const navigation = useNavigation(); // Hook for navigation events
 
   const isNavigatingProgrammatically = useRef(false); // Ref to track programmatic navigation
+  const initialMountRef = useRef(true); // Ref to track initial mount
   const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
@@ -104,7 +105,15 @@ export default function LobbyScreen() {
 
   // --- Game Status Change Handling (Navigation) ---
   useEffect(() => {
-    console.log("Game Status Changed:", gameStatus);
+    console.log("Game Status Changed:", gameStatus, "initialMount:", initialMountRef.current);
+    
+    // Предотвращаем навигацию при первом монтировании компонента
+    if (initialMountRef.current) {
+      console.log("[LobbyScreen] Пропускаем первую навигацию для стабилизации экрана");
+      initialMountRef.current = false;
+      return;
+    }
+    
     // Navigate away from lobby when game progresses
     if (
         gameStatus !== 'UNKNOWN' &&

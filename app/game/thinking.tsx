@@ -13,8 +13,10 @@ export default function ThinkingScreen() {
   const params = useLocalSearchParams<{ gameId: string; userId?: string; isAdmin?: string }>();
   const gameId = params.gameId;
   const userId = params.userId ?? null;
-  // Сначала берем из URL параметров
-  const [isAdmin, setIsAdmin] = useState(params.isAdmin === 'true');
+  // Initialize isAdmin from URL params as a fallback, but will update from WebSocket messages
+  // This ensures we have a reasonable default until WebSocket determines the true role
+  const [isAdmin, setIsAdmin] = useState(params.isAdmin === 'true'); // Initialize from URL param first
+  console.log(`[ThinkingScreen] 🔑 Initial isAdmin from URL: ${params.isAdmin}, set to: ${isAdmin}`);
   
   // Состояние для отслеживания полученных системных сообщений
   const [systemInputPrompt, setSystemInputPrompt] = useState('');
@@ -25,19 +27,9 @@ export default function ThinkingScreen() {
       gameId,
       userId,
       isAdmin,
-      rawIsAdminParam: params.isAdmin
+      note: 'isAdmin будет определен через WebSocket сообщения, не через URL'
     });
-    
-    // При монтировании устанавливаем начальное значение из URL-параметра,
-    // но потом это будет переопределено на основе WebSocket сообщений
-    if (params.isAdmin === 'true' && !isAdmin) {
-      setIsAdmin(true);
-      console.log('[ThinkingScreen] Начальное значение isAdmin: true');
-    } else if (params.isAdmin === 'false' && isAdmin) {
-      setIsAdmin(false);
-      console.log('[ThinkingScreen] Начальное значение isAdmin: false');
-    }
-  }, []);  // Выполняем только при монтировании
+  }, []); // Выполняем только при монтировании
 
   const [themeText, setThemeText] = useState('');
   const [timeLeft, setTimeLeft] = useState(THEME_INPUT_DURATION_S);
@@ -55,62 +47,95 @@ export default function ThinkingScreen() {
     currentTheme, // Получаем тему из WebSocket
     sendMessage,
     handleApiError, // Import the handleApiError function
+    lastSystemMessage, // Get system messages for role determination
+    hasAdminMessage, // Get admin message flag
   } = useWebSocketGame(gameId, userId);
 
-  // Получаем системные сообщения из сокета для определения роли
-  // Это упрощенная реализация - в идеале нужно добавить дополнительные поля в useWebSocketGame
-  const wsSystemMessages = React.useMemo(() => {
-    if (wsError) {
-      const errorMessage = wsError instanceof Error ? wsError.message : String(wsError);
-      if (errorMessage.includes('Введите ситуацию')) return ['Введите ситуацию'];
-      if (errorMessage.includes('Главный игрок вводит тему')) return ['Главный игрок вводит тему'];
+  // Определяем роль на основе последнего системного сообщения от WebSocket
+  // Это более надежно, чем URL параметры, особенно при смене ролей после replayability
+  const determineRoleFromMessage = React.useCallback((message: string | null) => {
+    console.log('[ThinkingScreen] determineRoleFromMessage вызвана с сообщением:', message);
+    
+    if (!message) {
+      console.log('[ThinkingScreen] determineRoleFromMessage: нет сообщения');
+      return null;
     }
     
-    // Здесь мы должны получать эти сообщения из WebSocket прямого потока
-    // В реальном решении надо расширить useWebSocketGame, чтобы он возвращал lastSystemMessages
-    
-    // Временное решение - проверяем статус и возвращаем соответствующие сообщения
-    if (gameStatus === 'THEME_INPUT') return ['Главный игрок вводит тему'];
-    if (gameStatus === 'MAIN_PLAYER_THINKING' && systemInputPrompt === 'Введите ситуацию') {
-      return ['Введите ситуацию'];
+    // Сообщение админу имеет приоритет
+    if (message.includes('Введите ситуацию')) {
+      console.log('[ThinkingScreen] determineRoleFromMessage: найдено сообщение АДМИНА');
+      return { isAdmin: true, prompt: 'Введите ситуацию' };
     }
     
-    // Если нет явных сообщений, используем урл-параметр isAdmin для определения роли
-    return params.isAdmin === 'true' ? ['Введите ситуацию'] : ['Главный игрок вводит тему'];
-  }, [gameStatus, wsError, params.isAdmin, systemInputPrompt]);
+    // Сообщение обычному игроку
+    if (message.includes('Главный игрок вводит тему')) {
+      console.log('[ThinkingScreen] determineRoleFromMessage: найдено сообщение НЕ-АДМИНА');
+      return { isAdmin: false, prompt: 'Главный игрок вводит тему' };
+    }
+    
+    console.log('[ThinkingScreen] determineRoleFromMessage: не найдено известных паттернов');
+    return null;
+  }, []);
 
-  // Наблюдаем за изменениями статуса и сообщениями для определения роли
+  // Наблюдаем за изменениями lastSystemMessage для определения роли
   useEffect(() => {
-    // Отладочное логирование
-    console.log('[ThinkingScreen] Статус игры:', gameStatus, 'Тема:', currentTheme, 'Системные сообщения:', wsSystemMessages);
+    // Детальное отладочное логирование
+    console.log('[ThinkingScreen] DEBUG - Статус игры:', gameStatus);
+    console.log('[ThinkingScreen] DEBUG - Тема:', currentTheme); 
+    console.log('[ThinkingScreen] DEBUG - Последнее системное сообщение:', lastSystemMessage);
+    console.log('[ThinkingScreen] DEBUG - Флаг админ сообщения:', hasAdminMessage);
+    console.log('[ThinkingScreen] DEBUG - Текущая роль isAdmin:', isAdmin);
+    console.log('[ThinkingScreen] DEBUG - isAdmin из URL:', params.isAdmin);
 
-    // Определяем роль по WebSocket сообщениям - ЭТО ГЛАВНЫЙ ИСТОЧНИК ПРАВДЫ
-    // Независимо от URL-параметров и прочих факторов
-    const isAdminMessage = wsSystemMessages.includes('Введите ситуацию');
-    const isViewerMessage = wsSystemMessages.includes('Главный игрок вводит тему');
+    // Определяем роль на основе флага hasAdminMessage и lastSystemMessage
+    let roleInfo = null;
     
-    console.log('[ThinkingScreen] Проверка сообщений:', { isAdminMessage, isViewerMessage, prev: isAdmin });
-    console.log('[ThinkingScreen] Все системные сообщения:', JSON.stringify(wsSystemMessages));
-    
-    // ВАЖНО! Сообщение "Введите ситуацию" имеет ПРИОРИТЕТ над "Главный игрок вводит тему"
-    // Если есть сообщение "Введите ситуацию" - это ВСЕГДА админ, независимо от других сообщений
-    if (isAdminMessage) {
-      setIsAdmin(true);
-      setSystemInputPrompt('Введите ситуацию');
-      console.log('[ThinkingScreen] Установлен админ по сообщению "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0441\u0438\u0442\u0443\u0430\u0446\u0438\u044e"');
+    // Check for exact admin message first
+    if (lastSystemMessage && lastSystemMessage.includes('Введите ситуацию')) {
+      // Если получено сообщение админа, это админ
+      roleInfo = { isAdmin: true, prompt: 'Введите ситуацию' };
+      console.log('[ThinkingScreen] 🔑 Определена роль АДМИНА из сообщения: "Введите ситуацию"');
     } 
-    // Только если НЕТ сообщения "Введите ситуацию", но есть "Главный игрок вводит тему" - это не-админ
-    else if (isViewerMessage) {
-      setIsAdmin(false);
-      setSystemInputPrompt('Главный игрок вводит тему');
-      console.log('[ThinkingScreen] Установлен не-админ по сообщению "\u0413\u043b\u0430\u0432\u043d\u044b\u0439 \u0438\u0433\u0440\u043e\u043a \u0432\u0432\u043e\u0434\u0438\u0442 \u0442\u0435\u043c\u0443"');
+    // Use hasAdminMessage flag as backup admin detection
+    else if (hasAdminMessage) {
+      roleInfo = { isAdmin: true, prompt: 'Введите ситуацию' };
+      console.log('[ThinkingScreen] 🔑 Определена роль АДМИНА из флага hasAdminMessage=true');
+    } 
+    // Message for regular player
+    else if (lastSystemMessage && lastSystemMessage.includes('Главный игрок вводит тему')) {
+      roleInfo = { isAdmin: false, prompt: 'Главный игрок вводит тему' };
+      console.log('[ThinkingScreen] 🔑 Определена роль НЕ-АДМИНА из сообщения: "Главный игрок вводит тему"');
+    }
+    // Use URL param as a backup if no messages yet and status is MAIN_PLAYER_THINKING or THEME_INPUT
+    else if ((gameStatus === 'MAIN_PLAYER_THINKING' || gameStatus === 'THEME_INPUT') && params.isAdmin === 'true' && !roleInfo) {
+      roleInfo = { isAdmin: true, prompt: 'Введите ситуацию' };
+      console.log('[ThinkingScreen] 🔑 Определена роль АДМИНА из URL параметра (резервный вариант)');
+    }
+    
+    if (roleInfo) {
+      console.log('[ThinkingScreen] DEBUG - Определена роль из сообщения:', roleInfo);
+      
+      // Обновляем состояние роли только если изменилось
+      if (roleInfo.isAdmin !== isAdmin) {
+        console.log('[ThinkingScreen] DEBUG - ИЗМЕНЕНИЕ РОЛИ с', isAdmin, 'на', roleInfo.isAdmin);
+        setIsAdmin(roleInfo.isAdmin);
+      }
+      
+      // Обновляем системный промпт
+      console.log('[ThinkingScreen] DEBUG - Установка промпта:', roleInfo.prompt);
+      setSystemInputPrompt(roleInfo.prompt);
+    } else {
+      console.log('[ThinkingScreen] DEBUG - НЕТ РОЛИ из сообщения. hasAdminMessage:', hasAdminMessage, 'lastSystemMessage:', lastSystemMessage);
+      // Если роль не определена из сообщения, сохраняем текущий промпт
+      console.log('[ThinkingScreen] DEBUG - Сохраняем текущий промпт:', systemInputPrompt);
     }
     
     // Получена тема - запомним её для всех игроков
     if (currentTheme && currentTheme.trim() !== '') {
+      console.log('[ThinkingScreen] DEBUG - Получена тема:', currentTheme);
       setThemeText(currentTheme);
     }
-  }, [gameStatus, currentTheme, wsSystemMessages, isAdmin]);
+  }, [gameStatus, currentTheme, lastSystemMessage, hasAdminMessage, isAdmin, systemInputPrompt]);
 
   // --- Timer Logic ---
   useEffect(() => {
@@ -197,29 +222,52 @@ export default function ThinkingScreen() {
 
   // --- Game Status Change Handling (Navigation) ---
   useEffect(() => {
+    // Log the current state for debugging
+    console.log(`[ThinkingScreen] 📊 Navigation check - gameStatus: ${gameStatus}, isAdmin: ${isAdmin}, hasAdminMessage: ${hasAdminMessage}`);
+    
+    // Special handling for MAIN_PLAYER_THINKING when we're the admin
+    if (gameStatus === 'MAIN_PLAYER_THINKING' && isAdmin) {
+        console.log(`[ThinkingScreen] ✅ Admin user in MAIN_PLAYER_THINKING state - staying on this screen to input theme`);
+        return; // Stay on this screen if admin during MAIN_PLAYER_THINKING
+    }
+    
     // Navigate away if status is no longer THEME_INPUT or if disconnected
     if (gameStatus !== 'THEME_INPUT' && gameStatus !== 'UNKNOWN') { // Allow UNKNOWN during initial load
         console.log(`ThinkingScreen: Navigating away due to status change: ${gameStatus}`);
+        
         // Go back to lobby or appropriate screen if status regresses or advances unexpectedly
         if (gameStatus === 'WAITING_FOR_PLAYERS' || gameStatus === 'CLOSED') {
              router.replace({ pathname: '/lobby/[gameId]', params: { gameId, userId, isAdmin: isAdmin.toString() } });
         } else if (gameStatus === 'WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT') {
-             // Navigate all users to scenario screen when admin has selected a theme
+             // Navigate all users directly to answer screen when admin has selected a theme
+             console.log(`[ThinkingScreen] 🚨 Status changed to WAITING_FOR_PLAYER_MESSAGE_AFTER_PROMPT - navigating DIRECTLY to answer.tsx`);
+             console.log(`[ThinkingScreen] 📝 Theme text: "${themeText || currentTheme || 'undefined'}", isAdmin: ${isAdmin}`);
+             
+             // Use either local themeText (for admin) or currentTheme from WebSocket (for non-admin)
+             const scenarioToPass = isAdmin ? themeText : currentTheme;
+             
+             // Add random query param to prevent stale navigation cache issues
+             const randomParam = Date.now().toString();
+             
              router.replace({ 
-                 pathname: '/game/scenario', 
+                 pathname: '/game/answer', 
                  params: { 
                      gameId, 
                      userId, 
                      isAdmin: isAdmin.toString(), 
-                     scenario: themeText  // For admin this will have the theme, for non-admin it will be shown via WebSocket
+                     scenario: scenarioToPass || '',  // Ensure we pass empty string if undefined
+                     _: randomParam // Cache-busting parameter
                  } 
              });
         } 
         // Add other navigation cases if needed
     }
-  }, [gameStatus, gameId, userId, isAdmin, themeText]);
+  }, [gameStatus, gameId, userId, isAdmin, themeText, currentTheme, hasAdminMessage]);
 
   // --- UI Rendering ---
+  // Additional debug log right before render to confirm state
+  console.log(`[ThinkingScreen] 🎨 Rendering UI with isAdmin=${isAdmin}, gameStatus=${gameStatus}, hasAdminMessage=${hasAdminMessage}`);
+  
   return (
     <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}

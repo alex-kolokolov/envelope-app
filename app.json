@@ -33,18 +33,17 @@
       }
     },
     "android": {
+      "package": "com.alex123142.envelope",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.alex123142.envelope",
-      "usesCleartextTraffic": true
+      "permissions": ["INTERNET"]
     },
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png",
-      "usesCleartextTraffic": true,
       "build": {
         "env": {
           "EXPO_REACT_NATIVE_WEB_ALLOW_HTTP_INSECURE_REQUESTS": "true"
@@ -52,7 +51,15 @@
       }
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

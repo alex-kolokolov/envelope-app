@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, ScrollView, ActivityIndicator } from 'react-native';
+import { View, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Text } from '~/components/ui/text';
 import { Button } from '~/components/ui/button';
@@ -13,7 +13,8 @@ import {
   PlayerRoundResult,
   PlayerStats,
   Player,
-  closeGame, 
+  closeGame,
+  createGame,
 } from '~/lib/api/client';
 
 
@@ -27,10 +28,11 @@ interface DisplayResult extends PlayerRoundResult {
 export default function ResultsScreen() {
 
   // --- Hooks and State ---
-  const params = useLocalSearchParams<{ gameId: string; userId?: string; isAdmin?: string }>();
+  const params = useLocalSearchParams<{ gameId: string; userId?: string; isAdmin?: string; scenario?: string }>();
   const gameId = params.gameId;
   const userId = params.userId ?? null;
   const isAdmin = params.isAdmin === 'true';
+  const scenario = params.scenario ?? ''; // Get scenario from navigation params
 
   // Use gameStatus from hook to drive state
   const {
@@ -38,6 +40,8 @@ export default function ResultsScreen() {
     error: wsError,
     sendMessage,
     readyState,
+    lastSystemMessage,
+    hasAdminMessage
   } = useWebSocketGame(gameId, userId);
 
   const [players, setPlayers] = useState<Player[]>([]); 
@@ -61,25 +65,163 @@ export default function ResultsScreen() {
       }
   }, [gameId]);
 
+  // Функция резервного HTTP запроса в случае ошибки разбора данных от GPT
+  const fetchResultsViaDirectApi = useCallback(async () => {
+    if (!gameId) return;
+    console.log(`[ResultsScreen] 🚨 Using direct API requests for gameId: ${gameId}`);
+    try {
+      // According to the OpenAPI spec, we should use the standard endpoints
+      // Instead of a fallback endpoint, we'll use the official endpoints directly
+      const [results, stats, info] = await Promise.all([
+        getRoundResults(gameId),   // /room/{roomId}/answers endpoint
+        getStats(gameId),          // /room/{roomId}/stats endpoint
+        getRoomInfo(gameId)        // /room/{roomId}/info endpoint (for full data)
+      ]);
+      
+      console.log('[ResultsScreen] 🔄 Direct API requests successful');
+      console.log('[ResultsScreen] 📃 Results count:', Object.keys(results || {}).length);
+      console.log('[ResultsScreen] 📈 Stats count:', Object.keys(stats || {}).length);
+      console.log('[ResultsScreen] 👥 Players count:', info.players?.length || 0);
+      
+      // Combine data in the format that the component expects
+      return {
+        results,
+        stats,
+        players: info.players
+      };
+    } catch (apiErr) {
+      console.error('Direct API requests failed:', apiErr);
+      throw apiErr;
+    }
+  }, [gameId]);
+
   const fetchResultsData = useCallback(async () => {
     if (!gameId) return;
     setIsLoadingData(true);
     setFetchError(null);
+    console.log(`[ResultsScreen] 🔍 Fetching result data for gameId: ${gameId}`);
     try {
       // Fetch results and stats concurrently when ready
       const [results, stats] = await Promise.all([
         getRoundResults(gameId),
         getStats(gameId),
       ]);
-      setRoundResults(results);
-      setPlayerStats(stats);
+      
+      console.log('[ResultsScreen] 📈 Received results data:', {
+        resultsCount: Object.keys(results || {}).length,
+        statsCount: Object.keys(stats || {}).length
+      });
+      
+      // Проверка на ошибки разбора данных от GPT
+      if (!results || Object.keys(results).length === 0 || !isValidResultData(results)) {
+        console.log('[ResultsScreen] ⚠️ Invalid or empty results data from GPT, using fallback');
+        try {
+          // Пробуем получить данные напрямую через API
+          const directData = await fetchResultsViaDirectApi();
+          
+          // Устанавливаем данные из прямых API запросов
+          if (directData) {
+            setRoundResults(directData.results || {});
+            setPlayerStats(directData.stats || {});
+            if (directData.players && directData.players.length > 0) {
+              setPlayers(directData.players);
+            }
+            console.log('[ResultsScreen] ✅ Successfully used direct API data');
+          } else {
+            console.warn('[ResultsScreen] ⚠️ Direct API returned no data');
+            // Use original data as fallback
+            setRoundResults(results);
+            setPlayerStats(stats);
+          }
+        } catch (directApiErr) {
+          // Если и прямые API запросы не сработали, используем оригинальные данные (даже если они неполные)
+          console.warn('[ResultsScreen] ⚠️ Direct API requests failed, using original incomplete data');
+          
+          // Автоматически заполняем пустые поля для тех результатов, которые имеют userAnswer, но не имеют других полей
+          const enhancedResults = { ...results };
+          let enhancedCount = 0;
+          
+          for (const key in enhancedResults) {
+            const result = enhancedResults[key];
+            if (result.userAnswer && (!result.gptAnswer || !result.result)) {
+              // Если есть ответ пользователя, но нет других полей, добавляем временные значения
+              enhancedResults[key] = {
+                ...result,
+                gptAnswer: result.gptAnswer || 'Обработка ответа...',
+                result: result.result || 'Ожидание результата'
+              };
+              enhancedCount++;
+            }
+          }
+          
+          if (enhancedCount > 0) {
+            console.log(`[ResultsScreen] 🔧 Enhanced ${enhancedCount} incomplete results with placeholder data`);
+          }
+          
+          setRoundResults(enhancedResults);
+          setPlayerStats(stats);
+        }
+      } else {
+        // Если данные корректные, используем их как обычно
+        setRoundResults(results);
+        setPlayerStats(stats);
+      }
     } catch (err) {
       console.error('Failed to fetch results/stats data:', err);
-      setFetchError(err instanceof Error ? err.message : 'Failed to load results.');
+      
+      // При любой ошибке в основном запросе пробуем прямые API запросы
+      try {
+        console.log('[ResultsScreen] 🔄 Attempting direct API requests due to error');
+        const directData = await fetchResultsViaDirectApi();
+        
+        if (directData) {
+          setRoundResults(directData.results || {});
+          setPlayerStats(directData.stats || {});
+          if (directData.players && directData.players.length > 0) {
+            setPlayers(directData.players);
+          }
+          console.log('[ResultsScreen] ✅ Direct API requests successful');
+        }
+      } catch (directApiErr) {
+        // Если оба метода не сработали, показываем ошибку пользователю
+        console.error('Both primary and direct API requests failed:', directApiErr);
+        setFetchError('Не удалось загрузить результаты. Пожалуйста, попробуйте позже.');
+      }
     } finally {
       setIsLoadingData(false);
     }
-  }, [gameId]);
+  }, [gameId, fetchResultsViaDirectApi]);
+
+  useEffect(() => {
+    // Если данные уже загружены, но они невалидны, попробуем прямые API запросы
+    if (roundResults && players?.length > 0 && !isValidResultData(roundResults)) {
+      console.log('[ResultsScreen] ⚠️ Detected invalid loaded results data, using direct API requests');
+      
+      // Проверяем, что мы еще не пытались использовать прямые запросы
+      if (!isLoadingData && !fetchError) {
+        // Запускаем прямые API запросы
+        setIsLoadingData(true);
+        fetchResultsViaDirectApi()
+          .then(data => {
+            if (data) {
+              setRoundResults(data.results || {});
+              setPlayerStats(data.stats || {});
+              if (data.players && data.players.length > 0) {
+                setPlayers(data.players);
+              }
+              console.log('[ResultsScreen] ✅ Successfully used direct API data');
+            }
+          })
+          .catch(err => {
+            console.error('Direct API requests failed:', err);
+            setFetchError('Direct API requests failed');
+          })
+          .finally(() => {
+            setIsLoadingData(false);
+          });
+      }
+    }
+  }, [roundResults, players, fetchResultsViaDirectApi, isLoadingData, fetchError]);
 
   // Fetch player data on mount
   useEffect(() => {
@@ -88,17 +230,33 @@ export default function ResultsScreen() {
 
   // Fetch results/stats based on gameStatus
   useEffect(() => {
-      if (
+      console.log('[ResultsScreen] 🔄 Checking if results fetch needed - gameStatus:', gameStatus);
+      console.log('[ResultsScreen] 📊 Current data state - roundResults:', !!roundResults, 'playerStats:', !!playerStats);
+      console.log('[ResultsScreen] 🧩 Scenario param present:', !!scenario && scenario.trim() !== '');
+      
+      // Check if we should fetch results data
+      const shouldFetchResults = (
+          // Normal conditions from WebSocket status
           gameStatus === 'RESULTS_READY' ||
           gameStatus === 'STATS_READY' ||
-          gameStatus === 'GAME_DONE'
-      ) {
+          gameStatus === 'GAME_DONE' ||
+          // Special case: We have scenario from params (coming from answer screen with GAME_DONE)
+          // but WebSocket status might have reset to UNKNOWN during navigation
+          (gameStatus === 'UNKNOWN' && !!scenario && scenario.trim() !== '')
+      );
+      
+      if (shouldFetchResults) {
           // Fetch data only if we don't have it yet or need refresh
           if (!roundResults || !playerStats) {
+             console.log('[ResultsScreen] 🔍 Fetching results and stats data...');
              fetchResultsData();
+          } else {
+             console.log('[ResultsScreen] ✅ Already have results data, skipping fetch');
           }
-      } else {
-          // Reset results if status changes away from results states
+      } else if (gameStatus && gameStatus !== 'UNKNOWN') {
+          // Only reset results if we have a valid non-UNKNOWN status
+          // that doesn't match our result states
+          console.log('[ResultsScreen] 🔄 Resetting results due to status change to:', gameStatus);
           setRoundResults(null);
           setPlayerStats(null);
       }
@@ -108,6 +266,8 @@ export default function ResultsScreen() {
   useEffect(() => {
     // Логирование изменений статуса игры с дополнительной информацией
     console.log('[ResultsScreen] Game status changed:', gameStatus, 'isAdmin:', isAdmin, 'userId:', userId);
+    console.log('[ResultsScreen] Current scenario/theme from params:', scenario);
+    console.log('[ResultsScreen] Last system message:', lastSystemMessage, 'hasAdminMessage:', hasAdminMessage);
     
     // Only navigate if we have a valid game status
     if (gameStatus) {
@@ -115,13 +275,59 @@ export default function ResultsScreen() {
       
       // Navigate based on game status
       if (gameStatus === 'MAIN_PLAYER_THINKING' || gameStatus === 'THEME_INPUT') {
-        // ВАЖНО: При новом раунде отправляем ВСЕХ на thinking screen, 
-        // чтобы WebSocket сообщения могли правильно определить, кто админ в этом раунде
-        console.log('[ResultsScreen] Navigating all users to thinking screen for role determination');
-        router.replace({
-          pathname: '/game/thinking',
-          params: { gameId, userId, isAdmin: isAdmin.toString() }
-        });
+        // Определяем роль на основе сообщений WebSocket
+        let isCurrentlyAdmin = false;
+        
+        // Check for exact admin message first
+        if (lastSystemMessage && lastSystemMessage.includes('Введите ситуацию')) {
+          isCurrentlyAdmin = true;
+          console.log('[ResultsScreen] 🔑 Определена роль АДМИНА из сообщения: "Введите ситуацию"');
+        } 
+        // Use hasAdminMessage flag as backup admin detection
+        else if (hasAdminMessage) {
+          isCurrentlyAdmin = true;
+          console.log('[ResultsScreen] 🔑 Определена роль АДМИНА из флага hasAdminMessage=true');
+        } 
+        // Message for regular player
+        else if (lastSystemMessage && lastSystemMessage.includes('Главный игрок вводит тему')) {
+          isCurrentlyAdmin = false;
+          console.log('[ResultsScreen] 🔑 Определена роль НЕ-АДМИНА из сообщения: "Главный игрок вводит тему"');
+        }
+        // Use URL param as a backup if no messages yet
+        else if (isAdmin) {
+          isCurrentlyAdmin = true;
+          console.log('[ResultsScreen] 🔑 Определена роль АДМИНА из URL параметра (резервный вариант)');
+        }
+        
+        console.log('[ResultsScreen] Role determination result:', { isCurrentlyAdmin });
+        
+        // Add random param for cache busting
+        const randomParam = Date.now().toString();
+        
+        // Направляем пользователя в зависимости от роли
+        if (isCurrentlyAdmin) {
+          console.log('[ResultsScreen] Redirecting user as ADMIN to thinking screen');
+          router.replace({
+            pathname: '/game/thinking',
+            params: { 
+              gameId, 
+              userId,
+              isAdmin: 'true',
+              _: randomParam // Cache-busting parameter
+            }
+          });
+        } else {
+          console.log('[ResultsScreen] Redirecting user as NON-ADMIN to scenario screen');
+          router.replace({
+            pathname: '/game/scenario',
+            params: { 
+              gameId, 
+              userId,
+              isAdmin: 'false',
+              _: randomParam // Cache-busting parameter
+            }
+          });
+        }
       } 
       else if (gameStatus === 'SCENARIO_PRESENTED') {
         // Everyone goes to scenario screen when scenario is presented
@@ -146,7 +352,7 @@ export default function ResultsScreen() {
       }
       // For other statuses (like RESULTS_READY), stay on the results screen
     }
-  }, [gameStatus, isAdmin, userId, gameId]);
+  }, [gameStatus, isAdmin, userId, gameId, lastSystemMessage, hasAdminMessage]);
 
   // Handle continue button press
   const handleContinue = () => {
@@ -162,9 +368,15 @@ export default function ResultsScreen() {
       userId, 
       isAdmin, 
       gameStatus,
-      readyState
+      readyState,
+      lastSystemMessage,
+      hasAdminMessage
     });
-    // Дальнейший роутинг оставляем на useEffect, который уже слушает gameStatus.
+    
+    // Не выполняем немедленный переход, а ждем сообщения от WebSocket
+    // Дальнейший роутинг оставляем на useEffect, который слушает gameStatus и lastSystemMessage
+    console.log('[ResultsScreen] Ожидаем сообщение от WebSocket для определения роли...');
+    // ВАЖНО: После продолжения роли будут переназначены на основе сообщений WebSocket
   };
 
   // Additional handling for WAITING_FOR_PLAYERS status (return to lobby)
@@ -179,24 +391,70 @@ export default function ResultsScreen() {
     }
   }, [gameStatus, gameId, userId, isAdmin]);
 
+  // --- Helper Functions ---
+
+  // Функция для проверки валидности данных результатов от GPT
+  const isValidResultData = (results: Record<string, PlayerRoundResult>): boolean => {
+    // Проверяем, что есть хотя бы один результат
+    if (!results || Object.keys(results).length === 0) return false;
+    
+    // Проверяем, что хотя бы 50% результатов содержат необходимые поля
+    // Это позволит отображать частичные результаты, если некоторые ответы еще не обработаны
+    let validCount = 0;
+    const totalCount = Object.keys(results).length;
+    
+    for (const key in results) {
+      const result = results[key];
+      
+      // Учитываем только валидные результаты
+      if (result.result && result.userAnswer && result.gptAnswer && 
+          typeof result.result === 'string' && 
+          (result.result.toLowerCase() === 'выжил' || result.result.toLowerCase() === 'погиб')) {
+        validCount++;
+      } else {
+        console.log(`[ResultsScreen] ⚠️ Invalid result data for player ${key}:`, result);
+      }
+    }
+    
+    // Если хотя бы 50% результатов валидны, считаем данные достаточными для отображения
+    const validPercentage = (validCount / totalCount) * 100;
+    console.log(`[ResultsScreen] 📊 Valid results: ${validCount}/${totalCount} (${validPercentage.toFixed(1)}%)`);
+    
+    return validPercentage >= 50;
+  };
+
   // --- UI Rendering ---
 
   const getPlayerNickname = useCallback((pId: string): string => {
     return players?.find(p => p.id === pId)?.name ?? `User ${pId.substring(0, 4)}`;
-  }, [players]);
-
-  // Combine data for easier rendering
+  }, [players]);  // Combine data for easier rendering
   const displayResults: DisplayResult[] = React.useMemo(() => {
-    if (!roundResults || !players) return [];
+    console.log('[ResultsScreen] 🔄 Recalculating displayResults');
+    console.log('[ResultsScreen] 📊 Data available: roundResults=', !!roundResults, 'players=', !!players, 'playerStats=', !!playerStats);
+    
+    if (!roundResults || !players) {
+      console.log('[ResultsScreen] ⚠️ Missing data for display: roundResults or players');
+      return [];
+    }
+    
+    // Log the raw data for debugging
+    console.log('[ResultsScreen] 🔍 Raw roundResults data:', roundResults);
+    console.log('[ResultsScreen] 👥 Available players:', players.map(p => `${p.name} (${p.id})`).join(', '));
     
     // Create our array with user first, then others
-    const resultsArray = Object.entries(roundResults).map(([pId, result]) => ({
-      ...result,
-      nickname: getPlayerNickname(pId),
-      stats: playerStats?.[pId] ?? null,
-      isSelf: pId === userId,
-    }));
-    
+    const resultsArray = Object.entries(roundResults).map(([pId, result]) => {
+      const nickname = getPlayerNickname(pId);
+      const isSelf = pId === userId;
+      console.log(`[ResultsScreen] 📝 Processing result for ${nickname} (${pId}) ${isSelf ? '(self)' : ''}`);
+      
+      return {
+        ...result,
+        nickname,
+        stats: playerStats?.[pId] ?? null,
+        isSelf
+      };
+    });
+
     // Sort: first the current user, then others
     return resultsArray.sort((a, b) => {
       if (a.isSelf) return -1; 
@@ -214,6 +472,45 @@ export default function ResultsScreen() {
     
     // Navigate back to main menu
     router.replace('/');
+  };
+
+  // Function to restart the game with current user as new admin
+  const handleRestartGame = async () => {
+    try {
+      // Close current game if admin
+      if (isAdmin) {
+        try {
+          await closeGame(gameId);
+          console.log('[ResultsScreen] Current game closed successfully');
+        } catch (err) {
+          console.error('Failed to close current game:', err);
+          // Continue with creating new game anyway
+        }
+      }
+      
+      // Get current player name from players list
+      const currentPlayer = players?.find(p => p.id === userId);
+      const playerName = currentPlayer?.name || 'Player';
+      
+      // Create a new game with current user as admin
+      console.log(`[ResultsScreen] Creating new game with user ${playerName} as admin`);
+      const newGame = await createGame(playerName, 8); // Use player's name and default capacity of 8
+      
+      console.log('[ResultsScreen] New game created:', newGame.roomId);
+      
+      // Navigate to the lobby of the new game as admin
+      router.replace({
+        pathname: '/lobby/[gameId]',
+        params: {
+          gameId: newGame.roomId,
+          isAdmin: 'true', // This user becomes the admin
+          playerName,
+        }
+      });
+    } catch (err) {
+      console.error('Failed to restart game:', err);
+      Alert.alert('Ошибка', 'Не удалось создать новую игру. Попробуйте позже.');
+    }
   };
 
   // Determine screen state based on gameStatus
@@ -268,6 +565,24 @@ export default function ResultsScreen() {
                 <CardTitle className="text-xl text-center">Решение раунда</CardTitle>
               </CardHeader>
               <CardContent className="pt-4">
+                {/* Show scenario/theme if available from params */}
+                {scenario && scenario.trim() !== '' && (
+                  <View className="mb-4 p-3 bg-muted/20 rounded-md">
+                    <Text className="text-sm font-medium mb-1 text-center">Тема:</Text>
+                    <Text className="text-base text-center">{scenario}</Text>
+                  </View>
+                )}
+                
+                {/* If no scenario from params, try to extract from results */}
+                {!scenario && displayResults.length > 0 && displayResults[0].userAnswer && displayResults[0].userAnswer.includes('→') && (
+                  <View className="mb-4 p-3 bg-muted/20 rounded-md">
+                    <Text className="text-sm font-medium mb-1 text-center">Тема:</Text>
+                    <Text className="text-base text-center">
+                      {displayResults[0].userAnswer.split('→')[0].trim()}
+                    </Text>
+                  </View>
+                )}
+                
                 <View className="mb-2">
                   <Text className="text-base font-semibold mb-3 text-center">Сводка результатов</Text>
                   {displayResults.map((result, idx) => (
@@ -348,13 +663,24 @@ export default function ResultsScreen() {
           </Card>
         )}
 
-        {/* Back to Menu Button */}
+        {/* Game Over Buttons */}
         {isGameOver && !isLoadingData && (
-            <View className='mt-8 mb-4'>
+            <View className='mt-8 mb-4 gap-4'>
+              {/* Restart Game Button */}
               <Button
-                 onPress={handleBackToMenu}
-                 size='lg'
-               >
+                onPress={handleRestartGame}
+                size='lg'
+                className='mb-3'
+              >
+                <Text>Начать новую игру (стать ведущим)</Text>
+              </Button>
+              
+              {/* Back to Menu Button */}
+              <Button
+                onPress={handleBackToMenu}
+                size='lg'
+                variant='outline'
+              >
                 <Text>Вернуться в меню</Text>
               </Button>
             </View>
