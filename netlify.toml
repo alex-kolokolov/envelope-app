@@ -1,12 +1,24 @@
 [build]
-  command = "npm install --legacy-peer-deps && expo export -p web"
+  command = "npm install --legacy-peer-deps && npx update-browserslist-db@latest && expo export -p web"
   publish = "dist"
 
 [build.environment]
   NODE_OPTIONS = "--max_old_space_size=4096"
   NPM_FLAGS = "--legacy-peer-deps"
+  
+[[redirects]]
+  from = "/api/*"
+  to = "http://103.137.250.117:6952/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/ws/*"
+  to = "ws://103.137.250.117:6952/ws/:splat"
+  status = 200
+  force = true
 [[redirects]]
   from = "/proxy/*"
-  to = "http://http://103.137.250.117:6952/:splat"
+  to = "http://103.137.250.117:6952/:splat"
   status = 200
   force = true
