@@ -4,12 +4,29 @@ import { DarkTheme, DefaultTheme, Theme, ThemeProvider } from '@react-navigation
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as React from 'react';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import { NAV_THEME } from '~/lib/constants';
 import { useColorScheme } from '~/lib/useColorScheme';
 import { PortalHost } from '@rn-primitives/portal';
 import { ThemeToggle } from '~/components/ThemeToggle';
 import { setAndroidNavigationBar } from '~/lib/android-navigation-bar';
+
+// Container component for web layout to prevent excessive stretching
+const Container = ({ children }: { children: React.ReactNode }) => {
+  if (Platform.OS === 'web') {
+    return (
+      <View style={{ 
+        flex: 1, 
+        maxWidth: 768, 
+        width: '100%', 
+        alignSelf: 'center' 
+      }}>
+        {children}
+      </View>
+    );
+  }
+  return <>{children}</>;
+};
 
 const LIGHT_THEME: Theme = {
   ...DefaultTheme,
@@ -51,24 +68,25 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
       <StatusBar style={isDarkColorScheme ? 'light' : 'dark'} />
-      <Stack screenOptions={{ headerBackVisible: false }}>
-        <Stack.Screen
-          name='index'
-          options={{
-            title: 'Доступные игры',
-            headerRight: () => <ThemeToggle />,
-          }}
-        />
-        <Stack.Screen
-          name='create-game'
-          options={{
-            title: 'Create Game',
-            headerBackVisible: true,
-          }}
-        />
-        <Stack.Screen name='lobby/[gameId]' options={{ headerBackVisible: true }} />
-        {/* Add other screens here if needed, they will inherit headerBackVisible: false */}
-      </Stack>
+      <Container>
+        <Stack screenOptions={{ headerBackVisible: false }}>
+          <Stack.Screen
+            name='index'
+            options={{
+              title: 'Доступные игры',
+              headerRight: () => <ThemeToggle />,
+            }}
+          />
+          <Stack.Screen
+            name='create-game'
+            options={{
+              title: 'Create Game',
+              headerBackVisible: true,
+            }}
+          />
+          <Stack.Screen name='lobby/[gameId]' options={{ headerBackVisible: true }} />
+        </Stack>
+      </Container>
       <PortalHost />
     </ThemeProvider>
   );

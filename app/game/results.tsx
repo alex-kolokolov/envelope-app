@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Text } from '~/components/ui/text';
 import { Button } from '~/components/ui/button';
@@ -569,7 +569,12 @@ export default function ResultsScreen() {
 
   // Determine screen state based on gameStatus
   const isWaitingForProcessing = gameStatus === 'WAITING_FOR_GPT' || gameStatus === 'WAITING_FOR_ALL_ANSWERS_FROM_GPT';
-  const showResults = gameStatus === 'RESULTS_READY' || gameStatus === 'STATS_READY' || gameStatus === 'GAME_DONE';
+  
+  // Modified to handle UNKNOWN status with valid data (Android fix)
+  const hasValidResultData = roundResults && Object.keys(roundResults).length > 0;
+  const showResults = gameStatus === 'RESULTS_READY' || gameStatus === 'STATS_READY' || gameStatus === 'GAME_DONE' || 
+    (gameStatus === 'UNKNOWN' && hasValidResultData);
+    
   const isGameOver = gameStatus === 'STATS_READY' || gameStatus === 'GAME_DONE' || gameStatus === 'CLOSED';
 
   let title = 'Результаты';
@@ -578,35 +583,49 @@ export default function ResultsScreen() {
   else if (showResults) title = 'Результаты раунда';
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView className='flex-1 bg-background p-4'>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      className='flex-1'
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+    >
+      <ScrollView 
+        className='flex-1 bg-background'
+        contentContainerStyle={{ 
+          paddingBottom: 40, // Extra padding at the bottom for mobile
+          padding: 16,
+        }}
+      >
+        {/* Max width container for web layout */}
+        <View className='mx-auto w-full' style={{ maxWidth: 640 }}>
         <Stack.Screen options={{ title: title }} />
 
-         <Text className='text-2xl font-bold text-center mb-2 text-primary'>
+         <Text className='text-2xl font-bold text-center mb-6 text-foreground'>
              {title}
          </Text>
 
          {/* Waiting State */}
          {isWaitingForProcessing && (
-             <View className='flex-1 justify-center items-center my-10'>
-                 <ActivityIndicator size='large' />
-                 <Text className='mt-4 text-lg text-foreground'>ИИ обрабатывает ответы...</Text>
+             <View className='items-center py-10'>
+                 <ActivityIndicator size='large' color={'hsl(var(--primary))'} />
+                 <Text className='mt-4 text-lg text-foreground font-medium'>ИИ обрабатывает ответы...</Text>
              </View>
          )}
 
          {/* Loading API Data State */}
          {isLoadingData && showResults && (
-             <View className='flex-1 justify-center items-center my-10'>
-                 <ActivityIndicator size='large' />
-                 <Text className='mt-4 text-lg text-foreground'>Загрузка данных результатов...</Text>
+             <View className='items-center py-10'>
+                 <ActivityIndicator size='large' color={'hsl(var(--primary))'} />
+                 <Text className='mt-4 text-lg text-foreground font-medium'>Загрузка данных результатов...</Text>
              </View>
          )}
 
          {/* Error State */}
          {fetchError && (
-           <View className='flex-1 justify-center items-center my-10'>
-             <Text className='text-destructive text-center mb-4'>{fetchError}</Text>
-             <Button onPress={fetchResultsData} variant='outline'><Text>Повторить</Text></Button>
+           <View className='items-center py-8'>
+             <Text className='text-destructive text-center mb-4 font-medium'>{fetchError}</Text>
+             <Button onPress={fetchResultsData} variant='outline' className='px-6'>
+               <Text>Повторить</Text>
+             </Button>
            </View>
          )}
 
@@ -614,9 +633,9 @@ export default function ResultsScreen() {
         {!isLoadingData && !fetchError && showResults && displayResults.length > 0 && (
           <View>
             {/* Solution Card */}
-            <Card className="mb-6 border-primary-foreground border-2">
-              <CardHeader className="pb-2 bg-primary-foreground/10">
-                <CardTitle className="text-xl text-center">Решение раунда</CardTitle>
+            <Card className="mb-6 border border-border">
+              <CardHeader className="pb-2 bg-muted/20">
+                <CardTitle className="text-xl text-center text-foreground">Решение раунда</CardTitle>
               </CardHeader>
               <CardContent className="pt-4">
                 {/* Show scenario/theme if available from params */}
@@ -637,11 +656,11 @@ export default function ResultsScreen() {
                   </View>
                 )}
                 
-                <View className="mb-2">
-                  <Text className="text-base font-semibold mb-3 text-center">Сводка результатов</Text>
+                <View className="mb-4 p-3 bg-muted/20 rounded-md">
+                  <Text className="text-base font-semibold mb-3 text-center text-foreground">Сводка результатов</Text>
                   {displayResults.map((result, idx) => (
                     <View key={`summary-${idx}`} className="flex-row justify-between mb-2">
-                      <Text className="text-sm">{result.nickname} {result.isSelf ? '(Вы)' : ''}</Text>
+                      <Text className="text-sm text-foreground">{result.nickname} {result.isSelf ? '(Вы)' : ''}</Text>
                       <Text className={`text-sm font-medium ${result.result?.toLowerCase() === 'выжил' ? 'text-green-600' : 'text-red-600'}`}>
                         {result.result ?? 'N/A'}
                       </Text>
@@ -653,10 +672,10 @@ export default function ResultsScreen() {
             
             {/* Your Result First */}
             {displayResults.map((result, index) => (
-              <Card key={`player-${index}`} className={`mb-6 ${result.isSelf ? 'border-primary border-2' : ''}`}>
-                <CardHeader className="pb-2">
+              <Card key={`player-${index}`} className={`mb-6 ${result.isSelf ? 'border-primary' : 'border border-border'}`}>
+                <CardHeader className={`pb-2 ${result.isSelf ? 'bg-primary/10' : 'bg-muted/20'}`}>
                   <View className="flex-row justify-between items-center">
-                    <CardTitle className={`text-lg ${result.isSelf ? 'text-primary' : 'text-card-foreground'}`}>
+                    <CardTitle className={`text-lg ${result.isSelf ? 'text-primary' : 'text-foreground'}`}>
                       {result.nickname} {result.isSelf ? '(Вы)' : ''}
                     </CardTitle>
                     <Text className={`text-sm font-semibold ${result.result?.toLowerCase() === 'выжил' ? 'text-green-600' : 'text-red-600'}`}>
@@ -664,16 +683,16 @@ export default function ResultsScreen() {
                     </Text>
                   </View>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-4">
                   <View className="py-2">
-                    <Text className="text-sm font-semibold mb-2">Ответ игрока:</Text>
+                    <Text className="text-sm font-semibold mb-2 text-foreground">Ответ игрока:</Text>
                     <Text className="text-sm text-muted-foreground mb-4 italic">
-                      <Text>"</Text>
+                      <Text className="text-muted-foreground">"</Text>
                       {result.userAnswer ?? 'N/A'}
-                      <Text>"</Text>
+                      <Text className="text-muted-foreground">"</Text>
                     </Text>
                     
-                    <Text className="text-sm font-semibold mb-2">Решение ИИ:</Text>
+                    <Text className="text-sm font-semibold mb-2 text-foreground">Решение ИИ:</Text>
                     <Text className="text-sm text-muted-foreground">{result.gptAnswer ?? 'No explanation available'}</Text>
                     
                     {/* Show stats if game is over */}
@@ -696,52 +715,21 @@ export default function ResultsScreen() {
           <Text className='text-center text-muted-foreground my-10'>Результаты пока недоступны.</Text>
         )}
         
-        {/* GPT Error Message */}
+        {/* GPT Error Message - Show warning indicator without duplicating buttons */}
         {!isLoadingData && roundResults && Object.values(roundResults).some(r => r.gptAnswer === "Ошибка разбора ответа от GPT") && (
-          <Card className='mb-6 border-warning'>
-            <CardHeader className='pb-2 bg-warning/10'>
-              <CardTitle className='text-lg text-center text-warning'>Ошибка обработки ответа</CardTitle>
-            </CardHeader>
-            <CardContent className='pt-4'>
-              <Text className='text-center mb-4'>Возникла проблема при обработке ответа. Вы можете вернуться в лобби или продолжить игру.</Text>
-              
-              <View className='flex-row justify-between mt-4'>
-                <Button
-                  onPress={handleBackToMenu}
-                  variant='outline'
-                  className='flex-1 mr-2'
-                >
-                  <Text>Вернуться в лобби</Text>
-                </Button>
-                
-                {isAdmin && (
-                  <Button
-                    onPress={handleContinue}
-                    disabled={isContinuing || readyState !== WebSocket.OPEN}
-                    className='flex-1 ml-2'
-                  >
-                    {isContinuing ? (
-                      <ActivityIndicator size='small' color='#ffffff' />
-                    ) : (
-                      <Text>Начать новый раунд</Text>
-                    )}
-                  </Button>
-                )}
-              </View>
-            </CardContent>
-          </Card>
+          <Text className='text-warning text-center my-4'>⚠️ Возникла проблема при обработке ответа</Text>
         )}
 
         {/* Общая статистика по раундам */}
         {playerStats && Object.keys(playerStats).length > 0 && (
-          <Card className='mb-6'>
+          <Card className='mb-6 border border-border'>
             <CardHeader className='pb-2 bg-muted/20'>
-              <CardTitle className='text-lg text-center'>Общие результаты</CardTitle>
+              <CardTitle className='text-lg text-center text-foreground'>Общие результаты</CardTitle>
             </CardHeader>
             <CardContent className='pt-4'>
               {Object.entries(playerStats).map(([pId, stats]) => (
                 <View key={pId} className='flex-row justify-between mb-2'>
-                  <Text className='text-sm'>
+                  <Text className='text-sm text-foreground'>
                     {getPlayerNickname(pId)} {pId === userId ? '(Вы)' : ''}
                   </Text>
                   <Text className='text-sm text-muted-foreground'>
@@ -755,48 +743,33 @@ export default function ResultsScreen() {
 
         {/* Game Over Buttons */}
         {isGameOver && !isLoadingData && (
-            <View className='mt-8 mb-4 gap-4'>
-              {/* Restart Game Button */}
-              <Button
-                onPress={handleRestartGame}
-                size='lg'
-                className='mb-3'
-              >
-                <Text>Начать новую игру (стать ведущим)</Text>
-              </Button>
-              
-              {/* Back to Menu Button */}
+            <View className='mt-8 mb-6'>
+              {/* Back to Lobby Button */}
               <Button
                 onPress={handleBackToMenu}
                 size='lg'
                 variant='outline'
+                className='w-full'
               >
-                <Text>Вернуться в меню</Text>
+                <Text>В лобби</Text>
               </Button>
             </View>
         )}
 
         {/* Кнопки после окончания раунда */}
         {showResults && !isWaitingForProcessing && (
-          <View className='mt-6 flex-row justify-between'>
+          <View className='mt-8 mb-6 gap-4'>
             <Button
               onPress={handleContinue}
               disabled={!isAdmin || isContinuing || readyState !== WebSocket.OPEN}
-              className='flex-1 mr-2'
+              className={`${isAdmin ? '' : 'opacity-50'}`}
+              size='lg'
             >
               {isContinuing ? (
                 <ActivityIndicator size='small' color='#ffffff' />
               ) : (
                 <Text>Продолжить</Text>
               )}
-            </Button>
-
-            <Button
-              onPress={handleBackToMenu}
-              variant='outline'
-              className='flex-1 ml-2'
-            >
-              <Text>В лобби</Text>
             </Button>
           </View>
         )}
@@ -808,8 +781,8 @@ export default function ResultsScreen() {
                 <Text className='text-muted-foreground mt-1'>Ожидание следующего раунда...</Text>
             </View>
         )}
+        </View> {/* Close the max-width container */}
       </ScrollView>
-
-    </View>
+    </KeyboardAvoidingView>
   );
 }

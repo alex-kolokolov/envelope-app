@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, FlatList, ActivityIndicator, Alert } from 'react-native';
-import { Stack, useLocalSearchParams, router, useNavigation } from 'expo-router'; // Added useNavigation
+import { Stack, useLocalSearchParams, router, useNavigation } from 'expo-router'; 
 import Animated, { Layout, FadeIn, FadeOut, Easing } from 'react-native-reanimated';
 import { Text } from '~/components/ui/text';
 import { Button } from '~/components/ui/button';
@@ -27,39 +27,39 @@ const gameStatusDisplayMap: Record<GameStatus, string> = {
 };
 
 export default function LobbyScreen() {
-  // --- Hooks and State ---
+  // Хуки и состояния
   const params = useLocalSearchParams<{ gameId: string; userId?: string; isAdmin?: string }>();
   const gameId = params.gameId;
-  const userId = params.userId ?? null; // Handle potentially missing userId
-  const isAdmin = params.isAdmin === 'true'; // Convert string param to boolean
-  const navigation = useNavigation(); // Hook for navigation events
+  const userId = params.userId ?? null; // Обработка случая, когда userId отсутствует
+  const isAdmin = params.isAdmin === 'true'; // Преобразование строки в булево значение
+  const navigation = useNavigation(); // Хук для управления навигацией
 
-  const isNavigatingProgrammatically = useRef(false); // Ref to track programmatic navigation
-  const initialMountRef = useRef(true); // Ref to track initial mount
+  const isNavigatingProgrammatically = useRef(false); // Ref для отслеживания программной навигации
+  const initialMountRef = useRef(true); // Ref для отслеживания первого монтирования
   const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
-  const [isClosing, setIsClosing] = useState(false); // For admin "Close Game" button
-  const [isLeaving, setIsLeaving] = useState(false); // For back action processing
+  const [isClosing, setIsClosing] = useState(false); // Для кнопки "Закрыть игру" (только для админа)
+  const [isLeaving, setIsLeaving] = useState(false); // Для обработки выхода назад
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // WebSocket connection - Destructure new state variables and closeConnection
+  // WebSocket — получение переменных состояния и функции закрытия
   const {
     isConnected: isWsConnected,
-    // lastMessage: wsMessage, // Keep if needed for JSON messages
+    
     error: wsError,
     readyState: wsReadyState,
     gameStatus,
-    // currentTheme,
-    // sendMessage,
-    closeConnection, // Get the manual close function
+    
+    
+    closeConnection, // Получить функцию ручного закрытия соединения
   } = useWebSocketGame(gameId, userId);
 
-  // --- Data Fetching ---
+  // Получение данных о комнате
   const fetchRoomData = useCallback(async () => {
     if (!gameId) return;
-    // Don't reset loading if already loaded, just refresh silently
+    // Не сбрасывать загрузку, если данные уже загружены, просто обновить
     setError(null);
     try {
       console.log('Fetching room info...');
@@ -72,29 +72,29 @@ export default function LobbyScreen() {
       if ((err as any)?.response?.status === 404) {
           Alert.alert("Ошибка", "Комната не найдена.", [{ text: "OK", onPress: () => router.back() }]);
       } else {
-          // Show other errors without necessarily navigating back immediately
+          // Показывать другие ошибки без возврата назад
           Alert.alert("Ошибка", errorMessage);
       }
     } finally {
-      setIsLoading(false); // Ensure loading is false even on refresh
+      setIsLoading(false); // Всегда сбрасывать загрузку после обновления
     }
   }, [gameId]);
 
   useEffect(() => {
-    setIsLoading(true); // Set loading true only on initial mount
+    setIsLoading(true); // Включать загрузку только при первом монтировании
     fetchRoomData();
-    // Optional: Set up polling to refresh room data periodically?
-    // const intervalId = setInterval(fetchRoomData, 15000); // Refresh every 15s
+    // Можно добавить периодическое обновление данных комнаты
+    // const intervalId = setInterval(fetchRoomData, 15000); // Обновлять каждые 15 секунд
     // return () => clearInterval(intervalId);
-  }, [fetchRoomData]); // Run only once on mount
+  }, [fetchRoomData]); // Запускать только при первом монтировании
 
-  // --- WebSocket Message Handling (Example: Player List Updates via Fetch) ---
-  // This part might need adjustment based on actual backend messages
-  // For simplicity, we're just re-fetching on status changes or periodically.
-  // If specific PLAYER_JOINED/LEFT messages exist, handle them here.
+  // Обработка сообщений WebSocket (например, обновление списка игроков)
+  // Может потребоваться корректировка под реальные сообщения бэкенда
+  // Для простоты просто обновляем данные при изменении статуса или периодически
+  // Если есть сообщения PLAYER_JOINED/LEFT, обрабатывайте их здесь
   // useEffect(() => {
   //   if (wsMessage) {
-  //     console.log("Processing WebSocket JSON Message:", wsMessage);
+  //     console.log("Обработка JSON-сообщения WebSocket:", wsMessage);
   //     if (wsMessage.type === 'PLAYER_JOINED' || wsMessage.type === 'PLAYER_LEFT') {
   //        fetchRoomData();
   //     } else if (wsMessage.type === 'GAME_STATE_UPDATE') {
@@ -103,7 +103,7 @@ export default function LobbyScreen() {
   //   }
   // }, [wsMessage, fetchRoomData]);
 
-  // --- Game Status Change Handling (Navigation) ---
+  // Обработка смены статуса игры (навигация)
   useEffect(() => {
     console.log("Game Status Changed:", gameStatus, "initialMount:", initialMountRef.current);
     
@@ -114,22 +114,22 @@ export default function LobbyScreen() {
       return;
     }
     
-    // Navigate away from lobby when game progresses
+    // Переход из лобби при изменении статуса игры
     if (
         gameStatus !== 'UNKNOWN' &&
         gameStatus !== 'WAITING_FOR_PLAYERS' &&
-        gameStatus !== 'CLOSED' // Don't navigate away if already closed
+        gameStatus !== 'CLOSED' // Не переходить, если игра уже закрыта
     ) {
         console.log(`Navigating to game screen due to status: ${gameStatus}`);
-        let pathname = '/game/scenario'; // Default game screen for non-admins or later stages
+        let pathname = '/game/scenario'; // Экран сценария по умолчанию для не-админов или поздних этапов
 
-        // Admin goes to thinking screen first, others wait at scenario screen
+        // Админ сначала попадает на экран размышления, остальные ждут на экране сценария
         if ((gameStatus === 'MAIN_PLAYER_THINKING' || gameStatus === 'THEME_INPUT')) {
             if (isAdmin) {
                 pathname = '/game/thinking';
                 console.log('Admin detected, navigating to /game/thinking');
             } else {
-                // Non-admins wait at the scenario screen while admin thinks
+                // Не-админы ждут на экране сценария, пока админ думает
                 pathname = '/game/scenario'; // Or a dedicated waiting screen if you prefer
                 console.log('Non-admin detected, navigating to /game/scenario (waiting for admin)');
             }
@@ -321,63 +321,70 @@ export default function LobbyScreen() {
 
       {/* Header Info */}
       <View className='p-4 border-b border-border bg-card'>
-        <Text className='text-xl font-semibold text-center text-card-foreground'>
-          Статус комнаты: {gameStatusDisplayMap[gameStatus] ?? 'Загрузка...'}
-        </Text>
-         <Text className={`text-sm text-center ${isWsConnected ? 'text-green-600' : 'text-red-600'}`}>
-             WebSocket: {wsStatusText} {isLeaving ? '(Выход...)' : ''}
-         </Text>
-        {error && <Text className='text-destructive text-center mt-2'>{error}</Text>}
-        {wsError && <Text className='text-destructive text-center mt-1'>Ошибка WS: {wsError instanceof Error ? wsError.message : 'Проблема соединения'}</Text>}
+        <View className='mx-auto w-full' style={{ maxWidth: 768 }}>
+          <Text className='text-xl font-semibold text-center text-card-foreground'>
+            Статус комнаты: {gameStatusDisplayMap[gameStatus] ?? 'Загрузка...'}
+          </Text>
+          <Text className={`text-sm text-center ${isWsConnected ? 'text-green-600' : 'text-red-600'}`}>
+              WebSocket: {wsStatusText} {isLeaving ? '(Выход...)' : ''}
+          </Text>
+          {error && <Text className='text-destructive text-center mt-2'>{error}</Text>}
+          {wsError && <Text className='text-destructive text-center mt-1'>Ошибка WS: {wsError instanceof Error ? wsError.message : 'Проблема соединения'}</Text>}
+        </View>
       </View>
 
       <View className='flex-1 p-4'>
-        {/* Player List */}
-        <Card className='flex-1'>
-          <CardHeader>
-            <CardTitle>Игроки ({roomInfo?.players?.length ?? 0} / {roomInfo?.capacity ?? '?'})</CardTitle>
-          </CardHeader>
-          <CardContent className='flex-1 p-0'>
-            <FlatList
-              data={roomInfo?.players ?? []}
-              renderItem={renderPlayerItem}
-              keyExtractor={(item) => item.id}
-              refreshing={isRefreshing}
-              onRefresh={handleRefreshPlayers}
-              ListEmptyComponent={<Text className='text-center text-muted-foreground p-4'>Ожидание игроков...</Text>}
-            />
-          </CardContent>
-        </Card>
+        {/* Container for max width */}
+        <View className='mx-auto w-full h-full' style={{ maxWidth: 768 }}>
+          {/* Player List */}
+          <Card className='flex-1'>
+            <CardHeader>
+              <CardTitle>Игроки ({roomInfo?.players?.length ?? 0} / {roomInfo?.capacity ?? '?'})</CardTitle>
+            </CardHeader>
+            <CardContent className='flex-1 p-0'>
+              <FlatList
+                data={roomInfo?.players ?? []}
+                renderItem={renderPlayerItem}
+                keyExtractor={(item) => item.id}
+                refreshing={isRefreshing}
+                onRefresh={handleRefreshPlayers}
+                ListEmptyComponent={<Text className='text-center text-muted-foreground p-4'>Ожидание игроков...</Text>}
+                contentContainerStyle={{ paddingBottom: 20 }} // Extra padding for mobile
+              />
+            </CardContent>
+          </Card>
+        </View>
       </View>
 
       {/* Footer Buttons */}
-      <View className='p-4 border-t border-border bg-card flex-row justify-between items-center'>
+      <View className='p-4 border-t border-border bg-card'>
+        <View className='mx-auto w-full' style={{ maxWidth: 768 }}>
           {isAdmin ? (
-              <>
-                  <Button
-                      variant="destructive"
-                      onPress={handleCloseGame}
-                      disabled={isClosing || isLeaving || !isWsConnected} // Disable if leaving or already closing
-                      className='flex-1 mr-2'
-                  >
-                      {isClosing ? <ActivityIndicator size="small" color="#ffffff" /> : <Text>Закрыть игру</Text>}
-                  </Button>
-                  <Button
-                      onPress={handleStartGame}
-                      // Enable start only when waiting and connected, and not leaving/closing
-                      disabled={isStarting || isClosing || isLeaving || !isWsConnected || !(gameStatus === 'WAITING_FOR_PLAYERS' || gameStatus === 'MAIN_PLAYER_THINKING')}
-                      className='flex-1 ml-2'
-                  >
-                      {isStarting ? <ActivityIndicator size="small" color="#ffffff" /> : <Text>Принудительно начать игру</Text>}
-                  </Button>
-              </>
+            <View className='flex-row justify-between items-center'>
+              <Button
+                variant="destructive"
+                onPress={handleCloseGame}
+                disabled={isClosing || isLeaving || !isWsConnected} // Disable if leaving or already closing
+                className='flex-1 mr-2'
+              >
+                {isClosing ? <ActivityIndicator size="small" color="#ffffff" /> : <Text>Закрыть игру</Text>}
+              </Button>
+              <Button
+                onPress={handleStartGame}
+                // Enable start only when waiting and connected, and not leaving/closing
+                disabled={isStarting || isClosing || isLeaving || !isWsConnected || !(gameStatus === 'WAITING_FOR_PLAYERS' || gameStatus === 'MAIN_PLAYER_THINKING')}
+                className='flex-1 ml-2'
+              >
+                {isStarting ? <ActivityIndicator size="small" color="#ffffff" /> : <Text>Принудительно начать игру</Text>}
+              </Button>
+            </View>
           ) : (
-              // Non-admin: No explicit leave button needed, back action handles it.
-              // Optionally add some other info or button here if needed.
-              <View className='flex-1'>
-                 <Text className='text-muted-foreground text-center'>Нажмите "Назад", чтобы выйти из лобби.</Text>
-              </View>
+            // Non-admin: No explicit leave button needed, back action handles it.
+            <View className='flex-1'>
+              <Text className='text-muted-foreground text-center'>Нажмите "Назад", чтобы выйти из лобби.</Text>
+            </View>
           )}
+        </View>
       </View>
     </View>
   );

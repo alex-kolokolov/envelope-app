@@ -63,8 +63,6 @@ export default function CreateGameScreen() {
           Настройте свою игру
         </Text>
 
-        {/* Removed Game Name input */}
-
         <View className='mb-6'>
           <Text className='text-base font-medium text-muted-foreground mb-1 native:pb-1'>Максимальное количество игроков (1-10)</Text>
           <TextInput
@@ -78,7 +76,6 @@ export default function CreateGameScreen() {
           />
         </View>
 
-        {/* Removed Number of Rounds input */}
 
         <Button onPress={handleCreateGame} size='lg' disabled={isLoading}>
           {isLoading ? (
