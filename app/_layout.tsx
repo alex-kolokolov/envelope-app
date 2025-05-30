@@ -46,6 +46,11 @@ export default function RootLayout() {
   const hasMounted = React.useRef(false);
   const { colorScheme, isDarkColorScheme } = useColorScheme();
   const [isColorSchemeLoaded, setIsColorSchemeLoaded] = React.useState(false);
+  // Create memoized theme to prevent unnecessary re-renders
+  const theme = React.useMemo(
+    () => (isDarkColorScheme ? DARK_THEME : LIGHT_THEME),
+    [isDarkColorScheme]
+  );
 
   useIsomorphicLayoutEffect(() => {
     if (hasMounted.current) {
@@ -66,7 +71,7 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
+    <ThemeProvider value={theme}>
       <StatusBar style={isDarkColorScheme ? 'light' : 'dark'} />
       <Container>
         <Stack screenOptions={{ headerBackVisible: false }}>
@@ -92,5 +97,5 @@ export default function RootLayout() {
   );
 }
 
-const useIsomorphicLayoutEffect =
-  Platform.OS === 'web' && typeof window === 'undefined' ? React.useEffect : React.useLayoutEffect;
+// Define useIsomorphicLayoutEffect outside of component to avoid hooks rule violations
+const useIsomorphicLayoutEffect = React.useLayoutEffect;

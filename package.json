@@ -3,7 +3,6 @@
   "main": "index.js",
   "version": "1.0.0",
   "config": {
-    "legacy-peer-deps": true
   },
   "scripts": {
     "dev": "expo start -c",
@@ -12,8 +11,8 @@
     "android": "expo start -c --android",
     "ios": "expo start -c --ios",
     "web": "expo start -c --web",
-    "clean": "rm -rf .expo node_modules",
-    "reset": "npm ci --legacy-peer-deps && npx expo install --check",
+    "clean": "if exist .expo rmdir /s /q .expo && if exist node_modules rmdir /s /q node_modules",
+    "reset": "npm ci && npx expo install --check",
     "postinstall": "npx tailwindcss -i ./global.css -o ./node_modules/.cache/nativewind/global.css"
   },
   "dependencies": {
@@ -41,9 +40,9 @@
     "immer": "^10.1.1",
     "lucide-react-native": "^0.128.0",
     "nativewind": "^4.1.23",
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
-    "react-native": "0.79.2",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-native": "0.73.2",
     "react-native-reanimated": "~3.17.4",
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.10.0",
@@ -56,7 +55,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
-    "@types/react": "~19.0.0",
+    "@types/react": "~18.2.14",
     "typescript": "^5.3.3"
   },
   "private": true

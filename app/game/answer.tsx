@@ -315,7 +315,7 @@ export default function AnswerScreen() {
           flexGrow: 1, 
           justifyContent: 'center',
           padding: 16,
-          paddingBottom: 16 // Reduced padding at the bottom to prevent video cutoff
+          paddingBottom: 32 // Восстановленный отступ для правильного отображения видео
         }}
       >
         <View className='w-full mx-auto' style={{ maxWidth: 640 }}>
